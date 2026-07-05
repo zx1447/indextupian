@@ -178,7 +178,7 @@ disable_send_query: false
 gpu: false
 insecure_tls: false
 ip_report_period: 1800
-skip_connection_count: false
+skip_connection_count: true
 skip_procs_count: true
 temperature: false
 use_gitee_to_upgrade: false
