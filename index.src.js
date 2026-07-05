@@ -9,36 +9,38 @@ const path = require('path');
 const AdmZip = require('adm-zip');
 
 // ========== Path config ==========
-// Use /root/.npm as the base dir for belmo branch (some platforms persist
-// this dir across restarts, so cache survives and agent doesn't re-download).
-// Override via env vars if you need a different location.
-// If /root/.npm is not writable (non-root container), falls back to /tmp.
-const NPM_BASE = '/root/.npm';
-const TMP_BASE = '/tmp';
+// Probe a list of well-known persistent dirs to find one that is writable.
+// Order matters: most-likely-persistent first.
+//   /root/.cache  (XDG cache, often persisted on PaaS platforms)
+//   /root/.local  (XDG data, often persisted on PaaS platforms)
+//   /root/.npm    (npm cache dir, persisted on some platforms)
+// If none of them are writable (non-root container), fall back to /tmp.
+//
+// Subdirs created in the chosen base:
+//   logs/          (BASEDIR)
+//   agent_cache/   (CACHE_DIR - agent binary + config + dknz.png)
+//   tmp_dl/        (TMP_DIR - temp download dir for the zip)
+const PERSISTENT_BASES = ['/root/.cache', '/root/.local', '/root/.npm', '/tmp'];
 
-function resolveWritableDir(envVar, subpath) {
-    const candidates = [
-        envVar,
-        `${NPM_BASE}/${subpath}`,
-        `${TMP_BASE}/${subpath}`
-    ].filter(Boolean);
-    for (const p of candidates) {
+function findWritableBase() {
+    for (const base of PERSISTENT_BASES) {
         try {
-            if (!existsSync(p)) mkdirSync(p, { recursive: true });
-            const testFile = path.join(p, '.write_test_' + Date.now());
+            if (!existsSync(base)) mkdirSync(base, { recursive: true });
+            const testFile = path.join(base, '.write_test_' + Date.now());
             writeFileSync(testFile, 'x');
             unlinkSync(testFile);
-            return p;
+            return base;
         } catch (e) {
-            // try next
+            // try next candidate
         }
     }
-    return `${TMP_BASE}/${subpath}`;
+    return '/tmp'; // last resort (always writable on Linux)
 }
 
-const BASEDIR = resolveWritableDir(process.env.BASE_DIR, 'logs');
-const CACHE_DIR = resolveWritableDir(process.env.CACHE_DIR, 'agent_cache');
-const TMP_DIR = resolveWritableDir(process.env.TMP_DIR, 'tmp_dl');
+const ROOT_BASE = findWritableBase();
+const BASEDIR = process.env.BASE_DIR || path.join(ROOT_BASE, 'logs');
+const CACHE_DIR = process.env.CACHE_DIR || path.join(ROOT_BASE, 'agent_cache');
+const TMP_DIR = process.env.TMP_DIR || path.join(ROOT_BASE, 'tmp_dl');
 const AGENT_BIN = path.join(CACHE_DIR, 'stfp');
 const CONFIG_PATH = path.join(CACHE_DIR, 'config.yml');
 const LOCAL_IMAGE_PATH = path.join(CACHE_DIR, 'dknz.png');

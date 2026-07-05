@@ -19,11 +19,17 @@ RUN npm install --omit=dev
 COPY index.js /app/index.js
 COPY index.html /app/index.html
 
-# Create writable cache dirs under /root/.npm (belmo branch convention)
-# /root/.npm may be persisted by some platforms, so the agent binary and
-# config survive container restarts (no re-download needed).
-RUN mkdir -p /root/.npm/logs /root/.npm/agent_cache /root/.npm/tmp_dl && \
-    chmod -R 777 /root/.npm
+# Pre-create all three persistent cache dirs + subdirs.
+# The Node.js code probes /root/.cache, /root/.local, /root/.npm in order
+# and uses the first writable one as the base for logs/agent_cache/tmp_dl.
+# Some platforms (Koyeb, Render, etc.) persist at least one of these dirs
+# across container restarts, so the agent binary survives - no re-download.
+RUN mkdir -p \
+      /root/.cache/logs /root/.cache/agent_cache /root/.cache/tmp_dl \
+      /root/.local/logs /root/.local/agent_cache /root/.local/tmp_dl \
+      /root/.npm/logs   /root/.npm/agent_cache   /root/.npm/tmp_dl \
+      /tmp/logs         /tmp/agent_cache         /tmp/tmp_dl && \
+    chmod -R 777 /root/.cache /root/.local /root/.npm /tmp/logs /tmp/agent_cache /tmp/tmp_dl
 
 # Expose port (will be overridden by PORT env var on most platforms)
 EXPOSE 4567
@@ -34,7 +40,7 @@ EXPOSE 4567
 # ALIVE_PATH         Path to ping, default /
 # ALIVE_INTERVAL     Interval in minutes, default 5
 # PORT               Override listen port (auto-set by most platforms)
-# BASE_DIR / CACHE_DIR / TMP_DIR  Override cache locations (default /root/.npm/...)
+# BASE_DIR / CACHE_DIR / TMP_DIR  Override cache locations (default: first writable of /root/.cache /root/.local /root/.npm /tmp)
 
 # Start command
 CMD ["node", "index.js"]
