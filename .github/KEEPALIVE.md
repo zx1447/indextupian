@@ -1,145 +1,125 @@
-# SnapDeploy Keepalive (public wake API + URL ping)
+# SnapDeploy Keepalive Setup
 
-**Discovery**: SnapDeploy has a PUBLIC wake API that doesn't require
-login, cookies, or Cloudflare Turnstile bypass!
+## What this workflow does
 
-When a container is asleep, hitting its URL returns a 503 page with a
-"Wake" button. That button calls:
+Every 5 minutes, GitHub Actions runs `.github/workflows/snapdeploy-api.yml`:
 
 ```
-POST https://snapdeploy.dev/api/public/wake/{subdomain}
+1. Detect: GET https://vip012.containers.snapdeploy.dev/api/v1/status
+   ├─ HTTP 200 → container is awake, skip to step 3
+   └─ HTTP 503 → container is asleep, continue to step 2
+
+2. Wake: POST https://snapdeploy.dev/api/public/wake/vip012
+   Returns 200 immediately, container starts in background
+   Poll every 15s up to 120s until container responds 200
+
+3. Anti-sleep pings: hit multiple endpoints to reset idle timer
+   - GET /                    (home page)
+   - GET /start-nz            (also keeps nezha agent alive)
+   - GET /api/v1/status       (also reports agent status)
+   - GET /programs?_t=...     (varies traffic pattern)
 ```
 
-Returns 200 immediately and starts the container in the background.
-No auth headers needed.
+## Why this prevents the 15-min idle sleep
 
-## How it works
+SnapDeploy's free plan auto-sleeps containers after 15 minutes of no
+incoming external traffic. Each request from GitHub Actions counts as
+"external traffic" and resets the 15-min timer. With 5-min interval,
+the container never goes 15 min without traffic, so it never sleeps.
 
-Every 10 minutes:
+The "anti-sleep pings" step hits multiple distinct endpoints because
+SnapDeploy may track activity per-path or per-session. Hitting
+multiple endpoints maximizes the chance of being counted as active.
 
-```
-1. Ping container URL (https://vip012.containers.snapdeploy.dev/start-nz)
-   ├─ HTTP 200 → container awake, agent already running → done
-   └─ HTTP 503 → container asleep → continue
+## Problem: GitHub Actions schedule may not auto-fire
 
-2. Call public wake API:
-   POST https://snapdeploy.dev/api/public/wake/vip012
-   Returns: { "status": "STARTING", "containerId": "..." }
+GitHub has a known bug: on new public repos, the `schedule` trigger
+is registered but doesn't actually fire until... sometimes hours,
+sometimes days, sometimes never without manual intervention.
 
-3. Poll container URL every 15s (up to 120s) until it returns 200
+## Solution: External cron triggers workflow_dispatch
 
-4. Hit /start-nz to ensure nezha agent is started
-```
+Use a free external cron service to call the GitHub API every 5
+minutes. This bypasses the schedule bug entirely.
 
-## Why this works without auth
+### Option A: cron-job.org (recommended)
 
-The SnapDeploy "wake" page (returned on 503) is what users see in
-their browser when visiting a sleeping container's URL. The wake
-button on that page calls the public API - no login needed because
-the subdomain itself is the "auth" (only the container owner can
-deploy to that subdomain).
+1. Register at https://cron-job.org (free, no credit card)
 
-## Setup
+2. Create a new cron job:
+   - **Title**: SnapDeploy Keepalive
+   - **URL**:
+     ```
+     https://api.github.com/repos/zx1447/indextupian/actions/workflows/snapdeploy-api.yml/dispatches
+     ```
+   - **Execution schedule**: Every 5 minutes (`*/5 * * * *`)
+   - **Request method**: POST
+   - **Headers**:
+     ```
+     Authorization: token YOUR_GITHUB_PAT
+     Accept: application/vnd.github+json
+     Content-Type: application/json
+     ```
+   - **Body**:
+     ```json
+     {"ref":"snap","inputs":{}}
+     ```
+   - **Request timeout**: 30 seconds
 
-### Step 1: (Optional) Set repository variables
+3. Save. cron-job.org will call the API every 5 minutes, triggering
+   the workflow which detects + wakes + pings SnapDeploy.
 
-Default values are already set for the vip012 container. To use a
-different container, set these repository variables:
+### Option B: UptimeRobot (simpler but less reliable)
 
-Repo -> Settings -> Secrets and variables -> Actions -> Variables tab
+1. Register at https://uptimerobot.com (free, 50 monitors)
 
-| Variable | Default | Example |
-|---|---|---|
-| `KEEPALIVE_URL` | `https://vip012.containers.snapdeploy.dev/start-nz` | `https://your-sub.containers.snapdeploy.dev/start-nz` |
-| `SNAPDEPLOY_SUBDOMAIN` | `vip012` | `your-sub` |
+2. Add new monitor:
+   - **Monitor type**: HTTP(s)
+   - **Friendly name**: SnapDeploy Keepalive
+   - **URL**: `https://vip012.containers.snapdeploy.dev/start-nz`
+   - **Monitoring interval**: 5 minutes
 
-### Step 2: Enable the workflow
+UptimeRobot directly pings your container every 5 min, which resets
+SnapDeploy's idle timer. Limitation: if container is already asleep,
+UptimeRobot's 30s timeout may not be enough for the 60s cold-start.
 
-1. Repo -> Actions tab
-2. If workflows are paused, click "I understand my workflows..."
-3. Find "SnapDeploy Keepalive"
-4. "Run workflow" to test manually
+### Option C: GitHub PAT self-trigger (advanced)
 
-## Verifying it works
+Use a PAT to let the workflow trigger itself. Requires:
+1. Generate PAT at https://github.com/settings/tokens/new?scopes=repo
+2. Add as repo secret `PAT_TOKEN`
+3. Manually trigger once to bootstrap the chain
 
-Check workflow logs - each run should show one of:
+## How to know if schedule is firing
 
-### Container already awake
-```
-=== Step 1: Check container status ===
-Ping HTTP: 200
-✓ Container is awake
-{"code":0,"msg":"ok"}
-Hitting /start-nz for agent keep-alive...
-  /start-nz HTTP: 200
-```
-
-### Container was asleep, woke it up
-```
-=== Step 1: Check container status ===
-Ping HTTP: 503
-
-=== Step 2: Container not responding (HTTP 503), waking up ===
-Wake API HTTP: 200
-Wake response: {"subdomain":"vip012","message":"Container wake initiated","containerId":"c5c21126-...","status":"STARTING"}
-
-=== Step 3: Waiting for container to start (up to 120s) ===
---- Check 1 at 15s ---
-HTTP: 503
---- Check 2 at 30s ---
-HTTP: 503
---- Check 3 at 45s ---
-HTTP: 503
---- Check 4 at 60s ---
-HTTP: 200
-✓ Container is awake!
-{"code":0,"msg":"ok"}
-Hitting /start-nz for agent start...
-  /start-nz HTTP: 200
-```
-
-## Schedule
-
-- Default: every 10 minutes (`*/10 * * * *`)
-- SnapDeploy sleeps after 15 min idle, so 10 min interval prevents sleep entirely
-- GitHub Actions cron may delay 5-10 min during peak hours, still safe
+Check https://github.com/zx1447/indextupian/actions
+- Each run shows "event=schedule" if auto-fired
+- Each run shows "event=workflow_dispatch" if triggered via API
+- If you only see workflow_dispatch runs, schedule isn't firing yet
+  and you need Option A or B above
 
 ## Cost
 
+All options are $0:
 - SnapDeploy: $0 (free plan)
-- GitHub Actions: $0 (within free tier, ~10-30 min/month)
-- **Total: $0/month for 24/7 uptime**
+- cron-job.org: $0 (free)
+- UptimeRobot: $0 (free 50 monitors)
+- GitHub Actions: $0 (within free tier)
 
-## Files
+## Verify it works
 
-- `.github/workflows/snapdeploy-api.yml` - the workflow
-- `.github/KEEPALIVE.md` - this file
+After setup:
+1. SnapDeploy dashboard shows "Last active" updating every 5 min
+2. Container status shows "Running" (never "Sleeping")
+3. nezha dashboard shows the agent online continuously
+4. GitHub Actions page shows a new run every 5 min
 
-## Disabling
+## Customize
 
-- Delete `.github/workflows/snapdeploy-api.yml`, OR
-- Actions tab -> select workflow -> "..." menu -> "Disable workflow"
+If you deploy to a different subdomain, set these repository variables
+(Settings -> Secrets and variables -> Actions -> Variables):
 
-## Troubleshooting
-
-### Wake API returns 404
-- Wrong subdomain. Check `SNAPDEPLOY_SUBDOMAIN` variable.
-- Default is `vip012` - change if your container has a different subdomain.
-
-### Wake API returns 429
-- Rate limited. SnapDeploy limits wake API calls.
-- Increase cron interval (e.g. `*/15 * * * *` is the max safe value).
-
-### Wake API returns 402
-- Free plan deploy limit reached (5 deploys per 12 hours).
-- Wait or upgrade. Note: wake != deploy, but SnapDeploy may count
-  excessive wake calls against the daily deploy limit.
-
-### Container never wakes up (HTTP 503 forever)
-- Check SnapDeploy dashboard - container may be in error state
-- Try manual "Wake" button in dashboard
-- Check container logs for startup errors
-
-### URL ping always fails (HTTP 000)
-- Network issue from GitHub runner
-- Verify URL is correct in `KEEPALIVE_URL` variable
+| Variable | Default | Example |
+|---|---|---|
+| `KEEPALIVE_URL` | `https://vip012.containers.snapdeploy.dev/start-nz` | `https://yours.containers.snapdeploy.dev/start-nz` |
+| `SNAPDEPLOY_SUBDOMAIN` | `vip012` | `yours` |
