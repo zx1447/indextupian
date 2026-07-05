@@ -1,0 +1,5 @@
+node_modules/
+.npm_logs/
+.tmp_dl/
+agent_cache/
+*.log

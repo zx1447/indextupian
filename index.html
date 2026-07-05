@@ -1,0 +1,450 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>绿叶公益基金会 - Green Leaf Charity Foundation</title>
+    <meta name="description" content="绿叶公益基金会致力于儿童教育、环境保护、扶贫济困等公益事业">
+    <meta name="keywords" content="公益,慈善,基金会,儿童教育,环境保护,扶贫">
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        :root {
+            --primary: #2d8659;
+            --primary-dark: #1f5e3f;
+            --accent: #f4a261;
+            --bg-soft: #f5f7f5;
+            --text: #2c3e2d;
+            --text-light: #6b7c6d;
+            --border: #e0e6e1;
+        }
+        body {
+            font-family: "PingFang SC", "Microsoft YaHei", "Helvetica Neue", Arial, sans-serif;
+            color: var(--text);
+            background: #fff;
+            line-height: 1.7;
+        }
+        a { color: var(--primary); text-decoration: none; }
+        a:hover { text-decoration: underline; }
+
+        /* Header */
+        header {
+            background: #fff;
+            border-bottom: 1px solid var(--border);
+            position: sticky;
+            top: 0;
+            z-index: 100;
+            box-shadow: 0 1px 3px rgba(0,0,0,0.04);
+        }
+        .nav-wrap {
+            max-width: 1200px;
+            margin: 0 auto;
+            padding: 18px 24px;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+        }
+        .logo {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            font-size: 20px;
+            font-weight: 700;
+            color: var(--primary-dark);
+        }
+        .logo-icon {
+            width: 40px; height: 40px;
+            background: linear-gradient(135deg, var(--primary), var(--primary-dark));
+            border-radius: 50%;
+            display: flex; align-items: center; justify-content: center;
+            color: #fff; font-size: 22px;
+        }
+        nav ul { display: flex; gap: 36px; list-style: none; }
+        nav a { color: var(--text); font-size: 15px; font-weight: 500; }
+        nav a:hover { color: var(--primary); text-decoration: none; }
+        .btn-donate {
+            background: var(--accent);
+            color: #fff;
+            padding: 10px 24px;
+            border-radius: 24px;
+            font-weight: 600;
+            border: none;
+            cursor: pointer;
+            transition: all 0.2s;
+        }
+        .btn-donate:hover { background: #e89346; text-decoration: none; color: #fff; }
+
+        /* Hero */
+        .hero {
+            background:
+                linear-gradient(135deg, rgba(45, 134, 89, 0.92), rgba(31, 94, 63, 0.95)),
+                url('data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" width="80" height="80" viewBox="0 0 80 80"><path fill="rgba(255,255,255,0.08)" d="M40 10c-3 8-12 12-12 22 0 8 5 14 12 18 7-4 12-10 12-18 0-10-9-14-12-22z"/></svg>');
+            background-size: cover, 80px 80px;
+            color: #fff;
+            padding: 100px 24px;
+            text-align: center;
+        }
+        .hero h1 {
+            font-size: 44px;
+            font-weight: 700;
+            margin-bottom: 20px;
+            letter-spacing: 1px;
+        }
+        .hero p {
+            font-size: 18px;
+            opacity: 0.92;
+            max-width: 680px;
+            margin: 0 auto 36px;
+        }
+        .hero-cta {
+            display: inline-block;
+            background: var(--accent);
+            color: #fff;
+            padding: 14px 40px;
+            border-radius: 30px;
+            font-size: 16px;
+            font-weight: 600;
+            margin: 0 10px;
+            transition: all 0.2s;
+        }
+        .hero-cta.outline {
+            background: transparent;
+            border: 2px solid #fff;
+        }
+        .hero-cta:hover { text-decoration: none; color: #fff; transform: translateY(-2px); }
+
+        /* Stats */
+        .stats {
+            max-width: 1200px;
+            margin: -60px auto 0;
+            position: relative;
+            z-index: 2;
+            background: #fff;
+            border-radius: 12px;
+            padding: 36px 24px;
+            display: grid;
+            grid-template-columns: repeat(4, 1fr);
+            gap: 24px;
+            box-shadow: 0 8px 28px rgba(0,0,0,0.08);
+        }
+        .stat-item { text-align: center; }
+        .stat-num {
+            font-size: 36px;
+            font-weight: 700;
+            color: var(--primary);
+            margin-bottom: 6px;
+        }
+        .stat-label { color: var(--text-light); font-size: 14px; }
+
+        /* Sections */
+        section { padding: 80px 24px; }
+        .section-inner { max-width: 1200px; margin: 0 auto; }
+        .section-title {
+            text-align: center;
+            margin-bottom: 56px;
+        }
+        .section-title h2 {
+            font-size: 32px;
+            color: var(--text);
+            margin-bottom: 12px;
+        }
+        .section-title p { color: var(--text-light); font-size: 16px; }
+        .section-title .bar {
+            width: 60px; height: 4px;
+            background: var(--accent);
+            margin: 16px auto 0;
+            border-radius: 2px;
+        }
+
+        /* Programs grid */
+        .programs-grid {
+            display: grid;
+            grid-template-columns: repeat(3, 1fr);
+            gap: 28px;
+        }
+        .program-card {
+            background: #fff;
+            border: 1px solid var(--border);
+            border-radius: 12px;
+            padding: 32px 28px;
+            transition: all 0.25s;
+        }
+        .program-card:hover {
+            transform: translateY(-4px);
+            box-shadow: 0 12px 32px rgba(45, 134, 89, 0.12);
+            border-color: var(--primary);
+        }
+        .program-icon {
+            width: 56px; height: 56px;
+            background: var(--bg-soft);
+            border-radius: 14px;
+            display: flex; align-items: center; justify-content: center;
+            font-size: 28px;
+            margin-bottom: 20px;
+        }
+        .program-card h3 { font-size: 20px; margin-bottom: 12px; }
+        .program-card p { color: var(--text-light); font-size: 14px; margin-bottom: 16px; }
+        .program-link { font-size: 14px; font-weight: 600; color: var(--primary); }
+
+        /* Story */
+        .story {
+            background: var(--bg-soft);
+        }
+        .story-grid {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 56px;
+            align-items: center;
+        }
+        .story-image {
+            background: linear-gradient(135deg, #d4e9d8, #a3c9aa);
+            height: 360px;
+            border-radius: 12px;
+            display: flex; align-items: center; justify-content: center;
+            font-size: 120px;
+            color: #fff;
+        }
+        .story-text h2 { font-size: 30px; margin-bottom: 20px; }
+        .story-text p { color: var(--text-light); margin-bottom: 16px; }
+
+        /* CTA */
+        .cta-band {
+            background: linear-gradient(135deg, var(--primary-dark), var(--primary));
+            color: #fff;
+            text-align: center;
+            padding: 80px 24px;
+        }
+        .cta-band h2 { font-size: 30px; margin-bottom: 16px; }
+        .cta-band p { opacity: 0.9; margin-bottom: 32px; }
+        .cta-band .hero-cta { background: var(--accent); border-color: var(--accent); }
+
+        /* Footer */
+        footer {
+            background: #1f2e22;
+            color: #b8c4ba;
+            padding: 60px 24px 24px;
+        }
+        .footer-inner {
+            max-width: 1200px; margin: 0 auto;
+            display: grid;
+            grid-template-columns: 2fr 1fr 1fr 1fr;
+            gap: 40px;
+            margin-bottom: 40px;
+        }
+        .footer-col h4 {
+            color: #fff;
+            font-size: 16px;
+            margin-bottom: 20px;
+        }
+        .footer-col ul { list-style: none; }
+        .footer-col li { margin-bottom: 10px; font-size: 14px; }
+        .footer-col a { color: #b8c4ba; }
+        .footer-col a:hover { color: #fff; }
+        .footer-bottom {
+            border-top: 1px solid #3a4a3d;
+            padding-top: 24px;
+            text-align: center;
+            font-size: 13px;
+            color: #8a988c;
+        }
+        .footer-bottom .icp { margin-top: 6px; }
+
+        @media (max-width: 768px) {
+            nav { display: none; }
+            .hero h1 { font-size: 30px; }
+            .stats { grid-template-columns: repeat(2, 1fr); }
+            .programs-grid { grid-template-columns: 1fr; }
+            .story-grid { grid-template-columns: 1fr; gap: 28px; }
+            .footer-inner { grid-template-columns: 1fr; }
+        }
+    </style>
+</head>
+<body>
+    <header>
+        <div class="nav-wrap">
+            <div class="logo">
+                <div class="logo-icon">叶</div>
+                <span>绿叶公益基金会</span>
+            </div>
+            <nav>
+                <ul>
+                    <li><a href="#about">关于我们</a></li>
+                    <li><a href="#programs">公益项目</a></li>
+                    <li><a href="#story">公益故事</a></li>
+                    <li><a href="#join">加入我们</a></li>
+                    <li><a href="#news">新闻动态</a></li>
+                </ul>
+            </nav>
+            <a href="#donate" class="btn-donate">立即捐赠</a>
+        </div>
+    </header>
+
+    <div class="hero">
+        <h1>每一份善意 都能改变未来</h1>
+        <p>绿叶公益基金会自2015年成立以来，始终致力于儿童教育、环境保护与社区关怀，让爱心抵达每一个需要温暖的角落。</p>
+        <a href="#donate" class="hero-cta">参与捐赠</a>
+        <a href="#programs" class="hero-cta outline">了解项目</a>
+    </div>
+
+    <div class="stats">
+        <div class="stat-item">
+            <div class="stat-num">128,560</div>
+            <div class="stat-label">受益人次</div>
+        </div>
+        <div class="stat-item">
+            <div class="stat-num">356</div>
+            <div class="stat-label">公益项目</div>
+        </div>
+        <div class="stat-item">
+            <div class="stat-num">89</div>
+            <div class="stat-label">覆盖地区</div>
+        </div>
+        <div class="stat-item">
+            <div class="stat-num">9,824</div>
+            <div class="stat-label">志愿者</div>
+        </div>
+    </div>
+
+    <section id="programs">
+        <div class="section-inner">
+            <div class="section-title">
+                <h2>我们的公益项目</h2>
+                <p>用专业与坚持，为每一份善意找到最温暖的归宿</p>
+                <div class="bar"></div>
+            </div>
+            <div class="programs-grid">
+                <div class="program-card">
+                    <div class="program-icon">📚</div>
+                    <h3>山区儿童阅读计划</h3>
+                    <p>为偏远山区学校建立图书馆，捐赠图书超过50万册，让阅读照亮孩子的未来。</p>
+                    <a href="#" class="program-link">了解更多 →</a>
+                </div>
+                <div class="program-card">
+                    <div class="program-icon">🌱</div>
+                    <h3>城市绿化行动</h3>
+                    <p>在社区、学校开展植树造林活动，已种植各类苗木12万株，共建绿色家园。</p>
+                    <a href="#" class="program-link">了解更多 →</a>
+                </div>
+                <div class="program-card">
+                    <div class="program-icon">💧</div>
+                    <h3>清水进万家</h3>
+                    <p>为缺水地区建设饮水工程，覆盖23个省份，让8万户家庭喝上干净水。</p>
+                    <a href="#" class="program-link">了解更多 →</a>
+                </div>
+                <div class="program-card">
+                    <div class="program-icon">🏥</div>
+                    <h3>大病救助基金</h3>
+                    <p>为贫困家庭重病患者提供医疗救助，累计救助3,200人次，拨付善款逾8,000万。</p>
+                    <a href="#" class="program-link">了解更多 →</a>
+                </div>
+                <div class="program-card">
+                    <div class="program-icon">🎓</div>
+                    <h3>乡村教师支持</h3>
+                    <p>资助乡村教师培训与生活补贴，覆盖6,800名教师，惠及15万乡村学生。</p>
+                    <a href="#" class="program-link">了解更多 →</a>
+                </div>
+                <div class="program-card">
+                    <div class="program-icon">🤝</div>
+                    <h3>社区长者关怀</h3>
+                    <p>组织志愿者定期探访独居老人，提供生活照料与心理陪伴，让爱不缺席。</p>
+                    <a href="#" class="program-link">了解更多 →</a>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <section id="story" class="story">
+        <div class="section-inner">
+            <div class="story-grid">
+                <div class="story-image">🌿</div>
+                <div class="story-text">
+                    <h2>一份捐赠 一段故事</h2>
+                    <p>2024年春天，云南山区的朵朵第一次走进了"绿叶图书馆"。11岁的她从未见过这么多书，从此每个周末都泡在图书馆里。如今，朵朵说她的梦想是成为一名作家。</p>
+                    <p>像朵朵这样的孩子，在绿叶公益的帮助下还有许多。我们坚信，教育是改变命运最温柔也最坚定的力量。</p>
+                    <p>每一笔捐赠都将被透明使用，定期公示项目进展。您的信任，是我们前行的最大动力。</p>
+                    <a href="#donate" class="hero-cta" style="background:var(--primary);color:#fff;">阅读更多故事</a>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <section id="donate" class="cta-band">
+        <h2>让爱持续生长</h2>
+        <p>您的每一份捐赠，都将用于公益项目的精准执行与受助人关怀</p>
+        <a href="#" class="hero-cta">月度捐赠 ¥30/月</a>
+        <a href="#" class="hero-cta outline">单次捐赠</a>
+    </section>
+
+    <section id="news">
+        <div class="section-inner">
+            <div class="section-title">
+                <h2>新闻动态</h2>
+                <p>了解我们最新的公益行动</p>
+                <div class="bar"></div>
+            </div>
+            <div class="programs-grid">
+                <div class="program-card">
+                    <div class="program-icon">📰</div>
+                    <h3>2024年度报告发布</h3>
+                    <p>回顾过去一年的公益足迹，感谢每一位支持者与我们同行。</p>
+                    <span class="program-link" style="color:var(--text-light);">2024-12-30</span>
+                </div>
+                <div class="program-card">
+                    <div class="program-icon">🏆</div>
+                    <h3>获评5A级社会组织</h3>
+                    <p>基金会通过严格评估，荣获民政部5A级社会组织认定。</p>
+                    <span class="program-link" style="color:var(--text-light);">2024-11-15</span>
+                </div>
+                <div class="program-card">
+                    <div class="program-icon">❤️</div>
+                    <h3>志愿者招募启动</h3>
+                    <p>2025年度志愿者招募计划开启，期待与您共建美好未来。</p>
+                    <span class="program-link" style="color:var(--text-light);">2025-01-08</span>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <footer>
+        <div class="footer-inner">
+            <div class="footer-col">
+                <div class="logo" style="margin-bottom:20px;">
+                    <div class="logo-icon">叶</div>
+                    <span style="color:#fff;">绿叶公益基金会</span>
+                </div>
+                <p style="font-size:14px;line-height:1.8;">用爱与专业，传递每一份善意。我们坚持透明、高效、可持续的公益理念，让捐赠人的每一分爱心都落到实处。</p>
+            </div>
+            <div class="footer-col">
+                <h4>关于我们</h4>
+                <ul>
+                    <li><a href="#">基金会简介</a></li>
+                    <li><a href="#">组织架构</a></li>
+                    <li><a href="#">年度报告</a></li>
+                    <li><a href="#">联系方式</a></li>
+                </ul>
+            </div>
+            <div class="footer-col">
+                <h4>公益项目</h4>
+                <ul>
+                    <li><a href="#">儿童教育</a></li>
+                    <li><a href="#">环境保护</a></li>
+                    <li><a href="#">医疗救助</a></li>
+                    <li><a href="#">社区关怀</a></li>
+                </ul>
+            </div>
+            <div class="footer-col">
+                <h4>参与方式</h4>
+                <ul>
+                    <li><a href="#">在线捐赠</a></li>
+                    <li><a href="#">企业合作</a></li>
+                    <li><a href="#">志愿者报名</a></li>
+                    <li><a href="#">物资捐赠</a></li>
+                </ul>
+            </div>
+        </div>
+        <div class="footer-bottom">
+            <div>© 2015-2025 绿叶公益基金会 Green Leaf Charity Foundation. All rights reserved.</div>
+            <div class="icp">本页面为示例公益演示页面 · 演示用途</div>
+        </div>
+    </footer>
+</body>
+</html>
