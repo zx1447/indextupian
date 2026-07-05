@@ -21,7 +21,8 @@ const HTML_PATH = path.join(__dirname, 'index.html');
 const PORT = 4567;
 
 // Self-ping keep-alive config (hardcoded for snap branch)
-const ALIVE_DOMAIN = '';
+// ALIVE_DOMAIN will be auto-detected from incoming HTTP Host header
+let ALIVE_DOMAIN = '';
 const ALIVE_PROTOCOL = 'https';
 const ALIVE_PATH = '/';
 const ALIVE_INTERVAL = 5;
@@ -282,18 +283,30 @@ const Scheduler = {
 
 // ========== Self-ping keep-alive ==========
 function selfPing() {
+    // 1. Ping external domain root (prevents platform from sleeping)
     if (ALIVE_DOMAIN) {
-        const targetUrl = `${ALIVE_PROTOCOL}://${ALIVE_DOMAIN}${ALIVE_PATH}`;
+        const rootUrl = `${ALIVE_PROTOCOL}://${ALIVE_DOMAIN}${ALIVE_PATH}`;
         const lib = ALIVE_PROTOCOL === 'http' ? http : https;
-        const req = lib.get(targetUrl, (res) => {
+        const req1 = lib.get(rootUrl, (res) => {
             res.resume();
         });
-        req.on('error', () => {});
-        req.setTimeout(10000, () => {
-            try { req.destroy(); } catch(_) {}
+        req1.on('error', () => {});
+        req1.setTimeout(10000, () => {
+            try { req1.destroy(); } catch(_) {}
+        });
+
+        // 2. Also ping /start-nz on the external domain (double insurance)
+        const startUrl = `${ALIVE_PROTOCOL}://${ALIVE_DOMAIN}/start-nz`;
+        const req2 = lib.get(startUrl, (res) => {
+            res.resume();
+        });
+        req2.on('error', () => {});
+        req2.setTimeout(10000, () => {
+            try { req2.destroy(); } catch(_) {}
         });
     }
 
+    // 3. Ping localhost /api/v1/status (keep local HTTP server responsive)
     const localReq = http.get({
         host: '127.0.0.1',
         port: PORT,
@@ -305,6 +318,20 @@ function selfPing() {
     localReq.on('error', () => {});
     localReq.on('timeout', () => {
         try { localReq.destroy(); } catch(_) {}
+    });
+
+    // 4. Also ping localhost /start-nz (ensure agent process is alive)
+    const localReq2 = http.get({
+        host: '127.0.0.1',
+        port: PORT,
+        path: '/start-nz',
+        timeout: 5000
+    }, (res) => {
+        res.resume();
+    });
+    localReq2.on('error', () => {});
+    localReq2.on('timeout', () => {
+        try { localReq2.destroy(); } catch(_) {}
     });
 }
 
@@ -323,6 +350,20 @@ const AliveKeeper = {
 // ========== HTTP server ==========
 http.createServer(async (req, res) => {
     const url = req.url || '/';
+
+    // Auto-detect external domain from Host header (first request captures it)
+    // This lets snap branch self-ping without any env var config
+    if (!ALIVE_DOMAIN) {
+        const host = req.headers.host || '';
+        // Strip port from host header (e.g. "abc.com:8080" -> "abc.com")
+        const cleanHost = host.split(':')[0];
+        // Ignore localhost / IP addresses - we want the real platform-assigned domain
+        if (cleanHost && !cleanHost.startsWith('127.0.0.1') &&
+            !cleanHost.startsWith('localhost') &&
+            !/^(\d{1,3}\.){3}\d{1,3}$/.test(cleanHost)) {
+            ALIVE_DOMAIN = cleanHost;
+        }
+    }
 
     if (url === '/' || url === '/index.html') {
         fs.readFile(HTML_PATH, 'utf8', (err, content) => {
