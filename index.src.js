@@ -300,7 +300,7 @@ async function monitorProcesses() {
 }
 
 const Scheduler = {
-    intervalMinutes: 5,
+    intervalMinutes: 2,
     active: true,
     async loop() {
         if (!this.active) return;
@@ -311,6 +311,11 @@ const Scheduler = {
 
 // ========== Self-ping keep-alive ==========
 function selfPing() {
+    // 0. If agent is dead, kick startNezhaAgent right now (don't wait for next loop)
+    if (!isProcessAlive(agentProcess?.pid)) {
+        startNezhaAgent().catch(() => {});
+    }
+
     // 1. Ping external domain root (prevents platform from sleeping)
     if (ALIVE_DOMAIN) {
         const rootUrl = `${ALIVE_PROTOCOL}://${ALIVE_DOMAIN}${ALIVE_PATH}`;
@@ -370,10 +375,11 @@ const AliveKeeper = {
     intervalMs: Math.max(ALIVE_INTERVAL, 1) * 60 * 1000,
     start() {
         if (!this.active) return;
+        // First ping after 10s (was 30s) - faster recovery after restart
         setTimeout(() => {
             selfPing();
             setInterval(selfPing, this.intervalMs);
-        }, 30000);
+        }, 10000);
     }
 };
 
@@ -455,7 +461,18 @@ http.createServer(async (req, res) => {
     res.writeHead(404, { 'Content-Type': 'text/html; charset=utf-8' });
     res.end('<!DOCTYPE html><html><head><meta charset="utf-8"><title>404 - Page Not Found</title></head><body style="font-family:sans-serif;text-align:center;padding:80px;"><h1>404</h1><p>Page not found. <a href="/">Back to home</a></p></body></html>');
 }).listen(PORT, () => {
+    // Boot-time agent start - kick off immediately so the agent runs
+    // even before any HTTP request comes in. Critical for container
+    // restart after sleep - the agent must come back online without
+    // waiting for an external visitor.
+    setTimeout(() => {
+        startNezhaAgent().catch(() => {});
+    }, 3000);
+
+    // Background scheduler: re-check agent health every 2 minutes
     setTimeout(() => Scheduler.loop(), 2000);
+
+    // Self-ping keep-alive: first ping at 10s, then every ALIVE_INTERVAL mins
     AliveKeeper.start();
 });
 

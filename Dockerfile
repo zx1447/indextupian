@@ -7,7 +7,10 @@ RUN npm install --omit=dev && npm cache clean --force
 
 # Stage 2: minimal runtime
 FROM node:18-alpine
-RUN apk add --no-cache unzip procps python3 \
+# Install runtime deps + gcompat (glibc compat layer for alpine)
+# nezha agent binary is built against glibc, won't run on plain alpine
+# gcompat provides the glibc shims needed for musl-based systems
+RUN apk add --no-cache unzip procps python3 gcompat libstdc++ libgcc \
     && mkdir -p \
         /root/.cache/logs /root/.cache/agent_cache /root/.cache/tmp_dl \
         /root/.local/logs /root/.local/agent_cache /root/.local/tmp_dl \
