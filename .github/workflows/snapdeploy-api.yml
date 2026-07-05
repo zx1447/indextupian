@@ -12,11 +12,17 @@ name: SnapDeploy Keepalive (public wake API + URL ping)
 #   2. If awake (HTTP 200): just ping /start-nz to keep agent alive
 #   3. If asleep (HTTP 503): call public wake API, then wait + retry
 #   4. Final ping to /start-nz as fallback
+#
+# NOTE: This workflow is also callable via repository_dispatch event with
+# event_type "keepalive-snap". This is used as a backup trigger in case
+# GitHub Actions schedule doesn't fire (known issue for new public repos).
 
 on:
   schedule:
     - cron: '*/10 * * * *'
   workflow_dispatch:
+  repository_dispatch:
+    types: [keepalive-snap]
 
 jobs:
   keepalive:
