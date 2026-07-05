@@ -1,100 +1,193 @@
-name: SnapDeploy Keepalive (API + URL)
+name: SnapDeploy Keepalive (login + status + start + ping)
 
-# Two-layer keepalive strategy for SnapDeploy free plan:
+# Strategy:
+#   1. Try login with email/password (may fail if Cloudflare Turnstile
+#      is required - that's OK, layer 3 still works)
+#   2. If login succeeded, check container status
+#   3. If container not running, call start API
+#   4. Always ping public URL (core keepalive - resets 15-min sleep timer)
 #
-# Layer 1 (primary): Call SnapDeploy's internal API to force-start
-#   the container. This is the same API the dashboard "Wake" button
-#   calls. Fast - doesn't wait for cold start.
-#
-# Layer 2 (fallback): Ping the public URL. This counts as external
-#   traffic for SnapDeploy's 15-min sleep timer, AND triggers a
-#   cold-start wake if the container is asleep.
-#
-# Both layers run on every tick (every 3 minutes).
+# Runs every 10 minutes. Workflow never fails (avoids GitHub disabling schedule).
 
 on:
   schedule:
-    - cron: '*/3 * * * *'
+    - cron: '*/10 * * * *'
   workflow_dispatch:
 
 jobs:
   keepalive:
     runs-on: ubuntu-latest
-    timeout-minutes: 3
+    timeout-minutes: 5
     steps:
-      # ===== Layer 1: SnapDeploy internal API (force start) =====
-      - name: Force-start container via SnapDeploy API
+      - name: Login + check + start + ping
         env:
+          EMAIL: ${{ secrets.SNAPDEPLOY_EMAIL }}
+          PASSWORD: ${{ secrets.SNAPDEPLOY_PASSWORD }}
           CONTAINER_ID: ${{ secrets.SNAPDEPLOY_CONTAINER_ID }}
-          COOKIE: ${{ secrets.SNAPDEPLOY_COOKIE }}
-          XSRF_TOKEN: ${{ secrets.SNAPDEPLOY_XSRF_TOKEN }}
-        run: |
-          if [ -z "$CONTAINER_ID" ] || [ -z "$COOKIE" ] || [ -z "$XSRF_TOKEN" ]; then
-            echo "::warning::SnapDeploy API secrets not set. Skipping API call."
-            echo "::warning::Set SNAPDEPLOY_CONTAINER_ID, SNAPDEPLOY_COOKIE, SNAPDEPLOY_XSRF_TOKEN in repo secrets."
-            echo "::warning::See .github/KEEPALIVE.md for instructions."
-            exit 0
-          fi
-
-          echo "=== Layer 1: SnapDeploy API call ==="
-          echo "Container ID: $CONTAINER_ID"
-          echo "Time: $(date -u '+%Y-%m-%d %H:%M:%S UTC')"
-
-          HTTP_CODE=$(curl -s -o /tmp/api-resp.txt -w "%{http_code}" \
-            -X POST \
-            "https://snapdeploy.dev/web/api/containers/${CONTAINER_ID}/start" \
-            -H "Content-Type: application/json" \
-            -H "Accept: */*" \
-            -H "Origin: https://snapdeploy.dev" \
-            -H "Referer: https://snapdeploy.dev/containers" \
-            -H "x-xsrf-token: ${XSRF_TOKEN}" \
-            -H "Cookie: ${COOKIE}" \
-            -H "User-Agent: Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/149.0.0.0 Safari/537.36 Edg/149.0.0.0" \
-            --max-time 30 \
-            --connect-timeout 10 || echo "000")
-
-          echo "API HTTP code: $HTTP_CODE"
-          echo "API response:"
-          cat /tmp/api-resp.txt 2>/dev/null | head -c 500
-          echo ""
-
-          # 202 = Accepted (success), 200 = OK, 400 = already running
-          if [ "$HTTP_CODE" = "202" ] || [ "$HTTP_CODE" = "200" ]; then
-            echo "✓ API call succeeded - container start requested"
-          elif [ "$HTTP_CODE" = "401" ] || [ "$HTTP_CODE" = "403" ]; then
-            echo "::warning::Auth failed (HTTP $HTTP_CODE). Session may have expired."
-            echo "::warning::Re-capture cookies from SnapDeploy dashboard (see KEEPALIVE.md)."
-          else
-            echo "::warning::API call returned HTTP $HTTP_CODE (non-fatal, URL ping will run next)"
-          fi
-          # Don't fail the workflow regardless of API result
-
-      # ===== Layer 2: Public URL ping (fallback + sleep timer reset) =====
-      - name: Ping public URL
-        env:
           KEEPALIVE_URL: ${{ vars.KEEPALIVE_URL || 'https://vip012.containers.snapdeploy.dev/start-nz' }}
         run: |
+          set +e  # never fail the workflow
+          COOKIE_JAR="/tmp/cookies.txt"
+          UA="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/149.0.0.0 Safari/537.36 Edg/149.0.0.0"
+          echo "=== Time: $(date -u '+%Y-%m-%d %H:%M:%S UTC') ==="
           echo ""
-          echo "=== Layer 2: Public URL ping ==="
-          echo "URL: $KEEPALIVE_URL"
-          echo "Time: $(date -u '+%Y-%m-%d %H:%M:%S UTC')"
 
+          # ===== Layer 1: Try login (may fail due to Cloudflare Turnstile) =====
+          LOGIN_OK="no"
+          if [ -n "$EMAIL" ] && [ -n "$PASSWORD" ] && [ -n "$CONTAINER_ID" ]; then
+            echo "=== Layer 1: Login attempt ==="
+            # Step 1a: Visit login page to get XSRF-TOKEN cookie
+            curl -s -c "$COOKIE_JAR" -o /dev/null \
+              -H "User-Agent: $UA" \
+              "https://snapdeploy.dev/login"
+            XSRF=$(grep -oP 'XSRF-TOKEN\s+\K\S+' "$COOKIE_JAR" 2>/dev/null | head -1)
+            echo "Got XSRF token from login page: ${XSRF:0:20}..."
+
+            # Step 1b: POST login
+            # Try multiple payload formats - SnapDeploy may accept any of these
+            for PAYLOAD in \
+              "{\"email\":\"$EMAIL\",\"password\":\"$PASSWORD\"}" \
+              "{\"username\":\"$EMAIL\",\"password\":\"$PASSWORD\"}"; do
+              echo "Trying payload: ${PAYLOAD:0:60}..."
+              LOGIN_HTTP=$(curl -s -c "$COOKIE_JAR" -b "$COOKIE_JAR" -o /tmp/login-resp.txt \
+                -H "Content-Type: application/json" \
+                -H "Accept: */*" \
+                -H "Origin: https://snapdeploy.dev" \
+                -H "Referer: https://snapdeploy.dev/login" \
+                -H "x-xsrf-token: $XSRF" \
+                -H "User-Agent: $UA" \
+                -X POST \
+                --data "$PAYLOAD" \
+                -w "%{http_code}" \
+                --max-time 30 \
+                "https://snapdeploy.dev/api/auth/login")
+              LOGIN_BODY=$(cat /tmp/login-resp.txt 2>/dev/null | head -c 500)
+              echo "Login HTTP: $LOGIN_HTTP"
+              echo "Login response: $LOGIN_BODY"
+              if [ "$LOGIN_HTTP" = "200" ]; then
+                echo "✓ Login succeeded"
+                LOGIN_OK="yes"
+                # Refresh XSRF token after login (server may rotate it)
+                XSRF=$(grep -oP 'XSRF-TOKEN\s+\K\S+' "$COOKIE_JAR" 2>/dev/null | head -1)
+                break
+              fi
+              echo "Login failed with this payload, trying next..."
+            done
+
+            if [ "$LOGIN_OK" = "no" ]; then
+              echo "::warning::Login failed (likely Cloudflare Turnstile required). Skipping API call."
+              echo "::warning::Layer 3 (URL ping) will still run and keep the container alive."
+            fi
+          else
+            echo "::warning::SNAPDEPLOY_EMAIL/PASSWORD/CONTAINER_ID secrets not set. Skipping login."
+          fi
+          echo ""
+
+          # ===== Layer 2: Check container status and start if needed =====
+          if [ "$LOGIN_OK" = "yes" ]; then
+            echo "=== Layer 2: Check container status ==="
+            STATUS_HTTP=$(curl -s -b "$COOKIE_JAR" -o /tmp/status-resp.txt \
+              -H "Accept: */*" \
+              -H "x-xsrf-token: $XSRF" \
+              -H "User-Agent: $UA" \
+              -w "%{http_code}" \
+              --max-time 30 \
+              "https://snapdeploy.dev/web/api/containers/$CONTAINER_ID")
+            STATUS_BODY=$(cat /tmp/status-resp.txt 2>/dev/null)
+            echo "Status HTTP: $STATUS_HTTP"
+            echo "Status response (first 500 chars): ${STATUS_BODY:0:500}"
+
+            if [ "$STATUS_HTTP" = "200" ]; then
+              # Parse status - try common field names
+              STATUS=$(echo "$STATUS_BODY" | python3 -c "
+          import json, sys
+          try:
+              d = json.load(sys.stdin)
+              # Try various field names SnapDeploy might use
+              for k in ['status', 'state', 'containerStatus', 'container_status', 'phase']:
+                  if k in d:
+                      print(str(d[k]).lower())
+                      break
+              else:
+                  # Maybe nested under 'container' or 'data'
+                  for parent in ['container', 'data', 'result']:
+                      if parent in d and isinstance(d[parent], dict):
+                          for k in ['status', 'state']:
+                              if k in d[parent]:
+                                  print(str(d[parent][k]).lower())
+                                  break
+                          break
+                  else:
+                      print('')
+          except:
+              print('')
+          " 2>/dev/null)
+              echo "Parsed status: '$STATUS'"
+
+              # Decide whether to start
+              NEEDS_START="no"
+              case "$STATUS" in
+                *sleep*|*stop*|*pause*|*idle*|*exit*|*dead*)
+                  NEEDS_START="yes"
+                  ;;
+                *running*|*active*|*online*|*up*)
+                  NEEDS_START="no"
+                  echo "✓ Container already running"
+                  ;;
+                "")
+                  echo "Cannot parse status, will try start anyway (idempotent)"
+                  NEEDS_START="yes"
+                  ;;
+                *)
+                  echo "Unknown status, will try start (idempotent)"
+                  NEEDS_START="yes"
+                  ;;
+              esac
+
+              if [ "$NEEDS_START" = "yes" ]; then
+                echo ""
+                echo "=== Starting container ==="
+                START_HTTP=$(curl -s -b "$COOKIE_JAR" -o /tmp/start-resp.txt \
+                  -X POST \
+                  -H "Content-Type: application/json" \
+                  -H "Accept: */*" \
+                  -H "Origin: https://snapdeploy.dev" \
+                  -H "Referer: https://snapdeploy.dev/containers" \
+                  -H "x-xsrf-token: $XSRF" \
+                  -H "User-Agent: $UA" \
+                  -w "%{http_code}" \
+                  --max-time 30 \
+                  "https://snapdeploy.dev/web/api/containers/$CONTAINER_ID/start")
+                echo "Start HTTP: $START_HTTP"
+                echo "Start response: $(cat /tmp/start-resp.txt 2>/dev/null | head -c 300)"
+                if [ "$START_HTTP" = "202" ] || [ "$START_HTTP" = "200" ]; then
+                  echo "✓ Container start requested"
+                fi
+              fi
+            elif [ "$STATUS_HTTP" = "401" ] || [ "$STATUS_HTTP" = "403" ]; then
+              echo "::warning::Session expired (HTTP $STATUS_HTTP). Login may not have fully succeeded."
+            fi
+          fi
+          echo ""
+
+          # ===== Layer 3: Public URL ping (CORE keepalive - always runs) =====
+          echo "=== Layer 3: Public URL ping (core keepalive) ==="
+          echo "URL: $KEEPALIVE_URL"
           for attempt in 1 2 3; do
             echo "--- Attempt $attempt ---"
-            HTTP_CODE=$(curl -s -o /tmp/url-resp.txt -w "%{http_code}" \
+            URL_HTTP=$(curl -s -o /tmp/url-resp.txt -w "%{http_code}" \
               --max-time 90 \
               --connect-timeout 30 \
               "$KEEPALIVE_URL" || echo "000")
-            echo "URL HTTP code: $HTTP_CODE"
-            echo "Response body:"
-            cat /tmp/url-resp.txt 2>/dev/null | head -c 500
-            echo ""
-            if [ "$HTTP_CODE" = "200" ]; then
+            echo "URL HTTP: $URL_HTTP"
+            echo "Response: $(cat /tmp/url-resp.txt 2>/dev/null | head -c 300)"
+            if [ "$URL_HTTP" = "200" ]; then
               echo "✓ URL ping succeeded"
-              exit 0
+              break
             fi
-            echo "Attempt $attempt failed (HTTP $HTTP_CODE), waiting 20s..."
+            echo "Attempt $attempt failed, waiting 20s..."
             sleep 20
           done
-          echo "::warning::All URL ping attempts failed - container may be down"
+          echo ""
+          echo "=== Keepalive run complete at $(date -u '+%H:%M:%S UTC') ==="
           exit 0

@@ -1,69 +1,38 @@
-# SnapDeploy Keepalive (API + URL dual-layer)
+# SnapDeploy Keepalive (login + status + start + URL ping)
 
-This branch includes a GitHub Actions workflow that keeps your
-SnapDeploy container awake 24/7 on the free plan.
+Three-layer keepalive strategy that doesn't rely on long-lived cookies.
 
-## Strategy: two layers, both run every 3 minutes
+## How it works
 
-### Layer 1 (primary): SnapDeploy internal API call
-
-Calls the same internal API endpoint that the dashboard "Wake" button
-uses. Force-starts the container immediately, no 60-second cold-start
-wait.
+Every 10 minutes, GitHub Actions runs:
 
 ```
-POST https://snapdeploy.dev/web/api/containers/{id}/start
+Layer 1: Login with email/password
+   ↓ (gets fresh JSESSIONID + XSRF-TOKEN, no manual cookie capture needed)
+Layer 2: GET container status
+   ↓ (parse status, decide if start is needed)
+Layer 2b: POST /start if container not running
+   ↓ (same API the dashboard "Wake" button uses)
+Layer 3: GET public URL /start-nz
+   ↓ (counts as external traffic, resets 15-min sleep timer)
 ```
 
-### Layer 2 (fallback): public URL ping
-
-Curls `https://vip012.containers.snapdeploy.dev/start-nz` from
-GitHub's public IPs. This counts as external traffic for SnapDeploy's
-15-minute sleep timer, and also triggers a wake-up if the container
-is asleep.
-
-If Layer 1 fails (e.g. session expired), Layer 2 still works as
-backup.
+Layer 3 always runs - it's the core keepalive mechanism. Even if
+Layers 1+2 fail (e.g. Cloudflare Turnstile blocks login), Layer 3
+alone keeps the container awake.
 
 ## Setup
 
 ### Step 1: Get your container ID
 
-Open SnapDeploy dashboard -> click your container -> look at URL.
-The UUID in the URL is your container ID:
+Open SnapDeploy dashboard -> click your container -> look at URL:
 ```
 https://snapdeploy.dev/containers/c5c21126-7c9f-423d-860d-864c00c8bd8c
                                     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
                                     this is the container ID
 ```
 
-### Step 2: Capture cookies + XSRF token
-
-1. Open https://snapdeploy.dev and log in
-2. Open browser DevTools (F12) -> Network tab
-3. Go to your containers page
-4. Click the "Wake" (醒醒) button on a sleeping container
-5. Find the POST request to `/web/api/containers/{id}/start`
-6. Right-click the request -> Copy -> Copy as cURL (bash)
-7. From the cURL command, extract these 3 values:
-
-**a) Container ID** - from the URL
-```
-c5c21126-7c9f-423d-860d-864c00c8bd8c
-```
-
-**b) Full Cookie header** - from the `-H 'cookie: ...'` flag
-```
-_ga=...; JSESSIONID=...; XSRF-TOKEN=...; AWSALB=...; AWSALBCORS=...
-```
-Copy the entire string after `cookie: ` (everything between the quotes).
-
-**c) x-xsrf-token header** - from the `-H 'x-xsrf-token: ...'` flag
-```
-eDe6yVhZQv5WrPYnf8HHLqq7T7a0x67ZrCzL30lFK-ONUIF7GwaMqGlvepx7z5MXHezzG57eYteG85r0yhz65yogG4C_aLFI
-```
-
-### Step 3: Add secrets to GitHub repo
+### Step 2: Add secrets to GitHub repo
 
 Go to: GitHub repo -> Settings -> Secrets and variables -> Actions ->
 New repository secret
@@ -72,19 +41,18 @@ Create these 3 secrets:
 
 | Secret name | Value |
 |---|---|
-| `SNAPDEPLOY_CONTAINER_ID` | Your container UUID (e.g. `c5c21126-...`) |
-| `SNAPDEPLOY_COOKIE` | The full cookie string from step 2b |
-| `SNAPDEPLOY_XSRF_TOKEN` | The x-xsrf-token value from step 2c |
+| `SNAPDEPLOY_EMAIL` | Your SnapDeploy login email |
+| `SNAPDEPLOY_PASSWORD` | Your SnapDeploy password |
+| `SNAPDEPLOY_CONTAINER_ID` | Your container UUID |
 
-### Step 4: Enable the workflow
+### Step 3: Enable the workflow
 
 1. Go to repo -> Actions tab
-2. If you see "Workflows aren't being run on this branch", click
-   "I understand my workflows, go ahead and enable them"
-3. Find "SnapDeploy Keepalive (API + URL)" in the left sidebar
-4. Click "Run workflow" to test it manually
+2. If workflows are paused, click "I understand my workflows, go ahead and enable them"
+3. Find "SnapDeploy Keepalive" in the left sidebar
+4. Click "Run workflow" to test manually
 
-### Step 5: (Optional) Change the ping URL
+### Step 4: (Optional) Change the ping URL
 
 If your SnapDeploy URL changes, set a repository variable:
 - Settings -> Secrets and variables -> Actions -> Variables tab
@@ -94,32 +62,51 @@ If your SnapDeploy URL changes, set a repository variable:
 
 ## Verifying it works
 
-1. **Workflow runs**: Actions tab should show a run every 3 minutes
-2. **Layer 1 success**: Logs should show `API HTTP code: 202`
-3. **Layer 2 success**: Logs should show `URL HTTP code: 200` and
-   response body `{"code":0,"msg":"ok"}`
-4. **Container status**: SnapDeploy dashboard should show "Running"
-   (not "Sleeping")
-5. **Last active time**: Should update every 3 minutes
+Check workflow logs - each run should show:
 
-## When sessions expire
+```
+=== Layer 1: Login attempt ===
+Login HTTP: 200         ← login succeeded
+✓ Login succeeded
 
-The `JSESSIONID` cookie may expire after server-side session timeout
-(usually 24 hours of inactivity, but we keep it active by calling
-every 3 minutes - so it should last indefinitely).
+=== Layer 2: Check container status ===
+Status HTTP: 200
+Parsed status: 'running'
+✓ Container already running
 
-If Layer 1 starts failing with HTTP 401/403:
-1. Re-capture the cookies (Step 2 above)
-2. Update the `SNAPDEPLOY_COOKIE` and `SNAPDEPLOY_XSRF_TOKEN` secrets
-3. Layer 2 (URL ping) keeps working as backup
+=== Layer 3: Public URL ping (core keepalive) ===
+URL HTTP: 200
+Response: {"code":0,"msg":"ok"}
+✓ URL ping succeeded
+```
 
-**Symptom of expired session**: Workflow log shows
-`::warning::Auth failed (HTTP 401). Session may have expired.`
+## If login fails (Cloudflare Turnstile)
+
+SnapDeploy uses Cloudflare Turnstile on the login form. The login
+request body is ~947 bytes (includes a Turnstile token), which can
+only be generated by a browser executing JavaScript.
+
+If login fails with HTTP 401/403/400, the workflow log shows:
+```
+::warning::Login failed (likely Cloudflare Turnstile required).
+::warning::Layer 3 (URL ping) will still run and keep the container alive.
+```
+
+**This is fine** - Layer 3 (URL ping every 10 minutes) is enough to
+prevent SnapDeploy's 15-minute auto-sleep. The login is only needed
+to actively start a sleeping container, which the URL ping does
+anyway (triggers a 60s cold-start wake).
+
+## Schedule
+
+- Runs every 10 minutes (`*/10 * * * *`)
+- Well under SnapDeploy's 15-minute sleep threshold
+- GitHub Actions cron may delay 5-10 min during peak hours, still safe
 
 ## Cost
 
 - SnapDeploy: $0 (free plan)
-- GitHub Actions: $0 (within free tier, ~80 min/month for public repo)
+- GitHub Actions: $0 (within free tier, ~30 min/month for public repo)
 - **Total: $0/month for 24/7 uptime**
 
 ## Files
@@ -129,6 +116,25 @@ If Layer 1 starts failing with HTTP 401/403:
 
 ## Disabling
 
-To stop keepalive:
 - Delete `.github/workflows/snapdeploy-api.yml`, OR
-- Actions tab -> "SnapDeploy Keepalive (API + URL)" -> "..." menu -> "Disable workflow"
+- Actions tab -> select workflow -> "..." menu -> "Disable workflow"
+
+## Troubleshooting
+
+### Login always fails
+- Verify email/password in secrets are correct
+- Try logging in manually at https://snapdeploy.dev/login - if it
+  requires a CAPTCHA, login from GitHub Actions won't work (Layer 3
+  still keeps the container alive though)
+- Check if password has special characters that need JSON escaping
+
+### Container status shows but doesn't auto-start
+- Check the parsed status in the log - if it's an unknown value,
+  the script defaults to trying start (idempotent)
+- The start API is idempotent - calling it on a running container
+  returns 400 (which is logged but harmless)
+
+### URL ping fails
+- Verify `KEEPALIVE_URL` variable (or default URL) is correct
+- Try opening the URL in a browser - should return `{"code":0,"msg":"ok"}`
+- If container is asleep, first ping takes 60s (script waits with 90s timeout)
