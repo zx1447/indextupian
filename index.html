@@ -3,15 +3,16 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>绿叶公益基金会 - Green Leaf Charity Foundation</title>
-    <meta name="description" content="绿叶公益基金会致力于儿童教育、环境保护、扶贫济困等公益事业">
-    <meta name="keywords" content="公益,慈善,基金会,儿童教育,环境保护,扶贫">
+    <title>绿叶公益 · AI 图片生成器 | GreenLeaf AI Image Generator</title>
+    <meta name="description" content="绿叶公益基金会推出的 AI 图片生成器，为公益海报、活动宣传、环保倡议提供免费 AI 创作支持">
+    <meta name="keywords" content="AI图片生成,公益海报,免费AI绘图,环保设计,公益宣传,绿叶公益">
     <style>
         * { margin: 0; padding: 0; box-sizing: border-box; }
         :root {
             --primary: #2d8659;
             --primary-dark: #1f5e3f;
             --accent: #f4a261;
+            --accent2: #4ec9b0;
             --bg-soft: #f5f7f5;
             --text: #2c3e2d;
             --text-light: #6b7c6d;
@@ -38,7 +39,7 @@
         .nav-wrap {
             max-width: 1200px;
             margin: 0 auto;
-            padding: 18px 24px;
+            padding: 16px 24px;
             display: flex;
             align-items: center;
             justify-content: space-between;
@@ -47,63 +48,71 @@
             display: flex;
             align-items: center;
             gap: 12px;
-            font-size: 20px;
+            font-size: 19px;
             font-weight: 700;
             color: var(--primary-dark);
         }
         .logo-icon {
-            width: 40px; height: 40px;
+            width: 38px; height: 38px;
             background: linear-gradient(135deg, var(--primary), var(--primary-dark));
             border-radius: 50%;
             display: flex; align-items: center; justify-content: center;
-            color: #fff; font-size: 22px;
+            color: #fff; font-size: 20px;
         }
-        nav ul { display: flex; gap: 36px; list-style: none; }
-        nav a { color: var(--text); font-size: 15px; font-weight: 500; }
+        .logo small {
+            display: block;
+            font-size: 11px;
+            color: var(--text-light);
+            font-weight: 400;
+            margin-top: -3px;
+        }
+        nav ul { display: flex; gap: 28px; list-style: none; }
+        nav a { color: var(--text); font-size: 14px; font-weight: 500; }
         nav a:hover { color: var(--primary); text-decoration: none; }
         .btn-donate {
             background: var(--accent);
             color: #fff;
-            padding: 10px 24px;
-            border-radius: 24px;
+            padding: 9px 22px;
+            border-radius: 22px;
             font-weight: 600;
+            font-size: 14px;
             border: none;
             cursor: pointer;
             transition: all 0.2s;
         }
         .btn-donate:hover { background: #e89346; text-decoration: none; color: #fff; }
 
-        /* Hero */
+        /* Hero with AI Generator */
         .hero {
             background:
                 linear-gradient(135deg, rgba(45, 134, 89, 0.92), rgba(31, 94, 63, 0.95)),
                 url('data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" width="80" height="80" viewBox="0 0 80 80"><path fill="rgba(255,255,255,0.08)" d="M40 10c-3 8-12 12-12 22 0 8 5 14 12 18 7-4 12-10 12-18 0-10-9-14-12-22z"/></svg>');
             background-size: cover, 80px 80px;
             color: #fff;
-            padding: 100px 24px;
+            padding: 80px 24px 60px;
             text-align: center;
         }
         .hero h1 {
-            font-size: 44px;
+            font-size: 40px;
             font-weight: 700;
-            margin-bottom: 20px;
+            margin-bottom: 16px;
             letter-spacing: 1px;
         }
         .hero p {
-            font-size: 18px;
+            font-size: 17px;
             opacity: 0.92;
-            max-width: 680px;
-            margin: 0 auto 36px;
+            max-width: 720px;
+            margin: 0 auto 32px;
         }
         .hero-cta {
             display: inline-block;
             background: var(--accent);
             color: #fff;
-            padding: 14px 40px;
-            border-radius: 30px;
-            font-size: 16px;
+            padding: 13px 36px;
+            border-radius: 28px;
+            font-size: 15px;
             font-weight: 600;
-            margin: 0 10px;
+            margin: 0 8px;
             transition: all 0.2s;
         }
         .hero-cta.outline {
@@ -112,23 +121,127 @@
         }
         .hero-cta:hover { text-decoration: none; color: #fff; transform: translateY(-2px); }
 
-        /* Stats */
-        .stats {
-            max-width: 1200px;
-            margin: -60px auto 0;
+        /* Generator box */
+        .generator {
+            max-width: 920px;
+            margin: -50px auto 0;
             position: relative;
             z-index: 2;
             background: #fff;
-            border-radius: 12px;
-            padding: 36px 24px;
+            border-radius: 16px;
+            padding: 32px;
+            box-shadow: 0 12px 36px rgba(0,0,0,0.1);
+        }
+        .gen-title {
+            font-size: 22px;
+            font-weight: 700;
+            margin-bottom: 6px;
+            color: var(--primary-dark);
+        }
+        .gen-subtitle {
+            color: var(--text-light);
+            font-size: 14px;
+            margin-bottom: 24px;
+        }
+        .gen-form { display: flex; flex-direction: column; gap: 16px; }
+        .gen-input-wrap label {
+            display: block;
+            font-size: 13px;
+            color: var(--text-light);
+            margin-bottom: 6px;
+            font-weight: 600;
+        }
+        .gen-input-wrap textarea {
+            width: 100%;
+            min-height: 90px;
+            padding: 12px 14px;
+            border: 1px solid var(--border);
+            border-radius: 10px;
+            font-size: 14px;
+            font-family: inherit;
+            resize: vertical;
+            transition: border 0.2s;
+        }
+        .gen-input-wrap textarea:focus {
+            outline: none;
+            border-color: var(--primary);
+        }
+        .gen-options {
+            display: grid;
+            grid-template-columns: repeat(3, 1fr);
+            gap: 14px;
+        }
+        .gen-options select, .gen-options input {
+            width: 100%;
+            padding: 10px 12px;
+            border: 1px solid var(--border);
+            border-radius: 8px;
+            font-size: 14px;
+            background: #fff;
+            font-family: inherit;
+        }
+        .gen-options select:focus, .gen-options input:focus {
+            outline: none;
+            border-color: var(--primary);
+        }
+        .gen-submit {
+            background: linear-gradient(135deg, var(--primary), var(--primary-dark));
+            color: #fff;
+            border: none;
+            padding: 14px 32px;
+            border-radius: 28px;
+            font-size: 16px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.2s;
+            margin-top: 8px;
+        }
+        .gen-submit:hover { transform: translateY(-2px); box-shadow: 0 8px 20px rgba(45, 134, 89, 0.3); }
+
+        /* Demo gallery */
+        .gallery {
+            display: grid;
+            grid-template-columns: repeat(4, 1fr);
+            gap: 16px;
+            margin-top: 28px;
+        }
+        .gallery-item {
+            aspect-ratio: 1;
+            border-radius: 10px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 56px;
+            color: #fff;
+            position: relative;
+            overflow: hidden;
+        }
+        .gallery-item::after {
+            content: attr(data-label);
+            position: absolute;
+            bottom: 0; left: 0; right: 0;
+            padding: 6px 10px;
+            background: linear-gradient(transparent, rgba(0,0,0,0.6));
+            font-size: 12px;
+            text-align: left;
+        }
+        .g1 { background: linear-gradient(135deg, #2d8659, #4ec9b0); }
+        .g2 { background: linear-gradient(135deg, #f4a261, #e76f51); }
+        .g3 { background: linear-gradient(135deg, #264653, #2a9d8f); }
+        .g4 { background: linear-gradient(135deg, #8ecae6, #219ebc); }
+
+        /* Stats */
+        .stats {
+            max-width: 1200px;
+            margin: 80px auto 0;
+            padding: 0 24px;
             display: grid;
             grid-template-columns: repeat(4, 1fr);
             gap: 24px;
-            box-shadow: 0 8px 28px rgba(0,0,0,0.08);
         }
         .stat-item { text-align: center; }
         .stat-num {
-            font-size: 36px;
+            font-size: 32px;
             font-weight: 700;
             color: var(--primary);
             margin-bottom: 6px;
@@ -138,12 +251,9 @@
         /* Sections */
         section { padding: 80px 24px; }
         .section-inner { max-width: 1200px; margin: 0 auto; }
-        .section-title {
-            text-align: center;
-            margin-bottom: 56px;
-        }
+        .section-title { text-align: center; margin-bottom: 56px; }
         .section-title h2 {
-            font-size: 32px;
+            font-size: 30px;
             color: var(--text);
             margin-bottom: 12px;
         }
@@ -165,7 +275,7 @@
             background: #fff;
             border: 1px solid var(--border);
             border-radius: 12px;
-            padding: 32px 28px;
+            padding: 28px 24px;
             transition: all 0.25s;
         }
         .program-card:hover {
@@ -174,21 +284,19 @@
             border-color: var(--primary);
         }
         .program-icon {
-            width: 56px; height: 56px;
+            width: 52px; height: 52px;
             background: var(--bg-soft);
-            border-radius: 14px;
+            border-radius: 12px;
             display: flex; align-items: center; justify-content: center;
-            font-size: 28px;
-            margin-bottom: 20px;
+            font-size: 26px;
+            margin-bottom: 18px;
         }
-        .program-card h3 { font-size: 20px; margin-bottom: 12px; }
-        .program-card p { color: var(--text-light); font-size: 14px; margin-bottom: 16px; }
+        .program-card h3 { font-size: 18px; margin-bottom: 10px; }
+        .program-card p { color: var(--text-light); font-size: 14px; margin-bottom: 14px; }
         .program-link { font-size: 14px; font-weight: 600; color: var(--primary); }
 
         /* Story */
-        .story {
-            background: var(--bg-soft);
-        }
+        .story { background: var(--bg-soft); }
         .story-grid {
             display: grid;
             grid-template-columns: 1fr 1fr;
@@ -197,51 +305,47 @@
         }
         .story-image {
             background: linear-gradient(135deg, #d4e9d8, #a3c9aa);
-            height: 360px;
+            height: 320px;
             border-radius: 12px;
             display: flex; align-items: center; justify-content: center;
             font-size: 120px;
             color: #fff;
         }
-        .story-text h2 { font-size: 30px; margin-bottom: 20px; }
-        .story-text p { color: var(--text-light); margin-bottom: 16px; }
+        .story-text h2 { font-size: 28px; margin-bottom: 18px; }
+        .story-text p { color: var(--text-light); margin-bottom: 14px; }
 
         /* CTA */
         .cta-band {
             background: linear-gradient(135deg, var(--primary-dark), var(--primary));
             color: #fff;
             text-align: center;
-            padding: 80px 24px;
+            padding: 72px 24px;
         }
-        .cta-band h2 { font-size: 30px; margin-bottom: 16px; }
-        .cta-band p { opacity: 0.9; margin-bottom: 32px; }
+        .cta-band h2 { font-size: 28px; margin-bottom: 14px; }
+        .cta-band p { opacity: 0.9; margin-bottom: 28px; }
         .cta-band .hero-cta { background: var(--accent); border-color: var(--accent); }
 
         /* Footer */
         footer {
             background: #1f2e22;
             color: #b8c4ba;
-            padding: 60px 24px 24px;
+            padding: 56px 24px 24px;
         }
         .footer-inner {
             max-width: 1200px; margin: 0 auto;
             display: grid;
             grid-template-columns: 2fr 1fr 1fr 1fr;
             gap: 40px;
-            margin-bottom: 40px;
+            margin-bottom: 36px;
         }
-        .footer-col h4 {
-            color: #fff;
-            font-size: 16px;
-            margin-bottom: 20px;
-        }
+        .footer-col h4 { color: #fff; font-size: 15px; margin-bottom: 18px; }
         .footer-col ul { list-style: none; }
         .footer-col li { margin-bottom: 10px; font-size: 14px; }
         .footer-col a { color: #b8c4ba; }
         .footer-col a:hover { color: #fff; }
         .footer-bottom {
             border-top: 1px solid #3a4a3d;
-            padding-top: 24px;
+            padding-top: 22px;
             text-align: center;
             font-size: 13px;
             color: #8a988c;
@@ -250,11 +354,14 @@
 
         @media (max-width: 768px) {
             nav { display: none; }
-            .hero h1 { font-size: 30px; }
+            .hero h1 { font-size: 28px; }
             .stats { grid-template-columns: repeat(2, 1fr); }
             .programs-grid { grid-template-columns: 1fr; }
             .story-grid { grid-template-columns: 1fr; gap: 28px; }
             .footer-inner { grid-template-columns: 1fr; }
+            .gallery { grid-template-columns: repeat(2, 1fr); }
+            .gen-options { grid-template-columns: 1fr; }
+            .generator { margin: -40px 16px 0; padding: 24px 20px; }
         }
     </style>
 </head>
@@ -263,15 +370,17 @@
         <div class="nav-wrap">
             <div class="logo">
                 <div class="logo-icon">叶</div>
-                <span>绿叶公益基金会</span>
+                <div>
+                    绿叶公益
+                    <small>AI 图片生成器 · 为公益而画</small>
+                </div>
             </div>
             <nav>
                 <ul>
-                    <li><a href="#about">关于我们</a></li>
+                    <li><a href="#generator">AI 生成</a></li>
                     <li><a href="#programs">公益项目</a></li>
                     <li><a href="#story">公益故事</a></li>
-                    <li><a href="#join">加入我们</a></li>
-                    <li><a href="#news">新闻动态</a></li>
+                    <li><a href="#donate">支持我们</a></li>
                 </ul>
             </nav>
             <a href="#donate" class="btn-donate">立即捐赠</a>
@@ -279,10 +388,60 @@
     </header>
 
     <div class="hero">
-        <h1>每一份善意 都能改变未来</h1>
-        <p>绿叶公益基金会自2015年成立以来，始终致力于儿童教育、环境保护与社区关怀，让爱心抵达每一个需要温暖的角落。</p>
-        <a href="#donate" class="hero-cta">参与捐赠</a>
+        <h1>用 AI 为公益发声</h1>
+        <p>绿叶公益基金会推出的免费 AI 图片生成器，为公益海报、活动宣传、环保倡议提供无限灵感的视觉创作支持。每一次创作，都是一份善意的传递。</p>
+        <a href="#generator" class="hero-cta">开始创作</a>
         <a href="#programs" class="hero-cta outline">了解项目</a>
+    </div>
+
+    <div class="generator" id="generator" style="margin-bottom: 0;">
+        <div class="gen-title">AI 图片生成器</div>
+        <div class="gen-subtitle">描述你想要的画面，AI 将为你生成公益主题图片 · 完全免费</div>
+        <div class="gen-form">
+            <div class="gen-input-wrap">
+                <label>画面描述（Prompt）</label>
+                <textarea placeholder="例如：山区孩子在新建的图书馆里看书，阳光从窗户洒进来，温暖明亮的公益海报风格...">山区孩子在新建的图书馆里看书，阳光从窗户洒进来，温暖明亮的公益海报风格</textarea>
+            </div>
+            <div class="gen-options">
+                <div class="gen-input-wrap">
+                    <label>风格模型</label>
+                    <select>
+                        <option>绿叶公益风格 v1</option>
+                        <option>慈善艺术 v2</option>
+                        <option>自然写实 v1</option>
+                        <option>水彩插画</option>
+                        <option>扁平海报</option>
+                    </select>
+                </div>
+                <div class="gen-input-wrap">
+                    <label>尺寸</label>
+                    <select>
+                        <option>1:1 正方形 (1024×1024)</option>
+                        <option>3:4 竖版 (768×1024)</option>
+                        <option>4:3 横版 (1024×768)</option>
+                        <option>16:9 宽屏 (1280×720)</option>
+                    </select>
+                </div>
+                <div class="gen-input-wrap">
+                    <label>生成数量</label>
+                    <select>
+                        <option>1 张</option>
+                        <option>2 张</option>
+                        <option>4 张</option>
+                    </select>
+                </div>
+            </div>
+            <button class="gen-submit" onclick="alert('演示模式：实际部署后此处会调用 /api/v1/render 接口生成图片。')">✨ 开始生成</button>
+        </div>
+        <div class="gallery">
+            <div class="gallery-item g1" data-label="山区图书馆">📚</div>
+            <div class="gallery-item g2" data-label="环保海报">🌱</div>
+            <div class="gallery-item g3" data-label="清水计划">💧</div>
+            <div class="gallery-item g4" data-label="长者关怀">🤝</div>
+        </div>
+        <div style="text-align:center;margin-top:20px;color:var(--text-light);font-size:13px;">
+            以上为示例图，实际生成结果将根据描述动态创建
+        </div>
     </div>
 
     <div class="stats">
@@ -295,8 +454,8 @@
             <div class="stat-label">公益项目</div>
         </div>
         <div class="stat-item">
-            <div class="stat-num">89</div>
-            <div class="stat-label">覆盖地区</div>
+            <div class="stat-num">48,920</div>
+            <div class="stat-label">AI 生成图片</div>
         </div>
         <div class="stat-item">
             <div class="stat-num">9,824</div>
@@ -307,11 +466,17 @@
     <section id="programs">
         <div class="section-inner">
             <div class="section-title">
-                <h2>我们的公益项目</h2>
-                <p>用专业与坚持，为每一份善意找到最温暖的归宿</p>
+                <h2>AI 赋能公益项目</h2>
+                <p>用智能生成降低公益传播的视觉门槛，让每一个善行都被看见</p>
                 <div class="bar"></div>
             </div>
             <div class="programs-grid">
+                <div class="program-card">
+                    <div class="program-icon">🎨</div>
+                    <h3>公益海报生成</h3>
+                    <p>为山区学校、社区公益组织免费生成宣传海报，已为 2,300+ 组织提供服务。</p>
+                    <a href="#" class="program-link">了解更多 →</a>
+                </div>
                 <div class="program-card">
                     <div class="program-icon">📚</div>
                     <h3>山区儿童阅读计划</h3>
@@ -328,12 +493,6 @@
                     <div class="program-icon">💧</div>
                     <h3>清水进万家</h3>
                     <p>为缺水地区建设饮水工程，覆盖23个省份，让8万户家庭喝上干净水。</p>
-                    <a href="#" class="program-link">了解更多 →</a>
-                </div>
-                <div class="program-card">
-                    <div class="program-icon">🏥</div>
-                    <h3>大病救助基金</h3>
-                    <p>为贫困家庭重病患者提供医疗救助，累计救助3,200人次，拨付善款逾8,000万。</p>
                     <a href="#" class="program-link">了解更多 →</a>
                 </div>
                 <div class="program-card">
@@ -357,67 +516,40 @@
             <div class="story-grid">
                 <div class="story-image">🌿</div>
                 <div class="story-text">
-                    <h2>一份捐赠 一段故事</h2>
-                    <p>2024年春天，云南山区的朵朵第一次走进了"绿叶图书馆"。11岁的她从未见过这么多书，从此每个周末都泡在图书馆里。如今，朵朵说她的梦想是成为一名作家。</p>
-                    <p>像朵朵这样的孩子，在绿叶公益的帮助下还有许多。我们坚信，教育是改变命运最温柔也最坚定的力量。</p>
-                    <p>每一笔捐赠都将被透明使用，定期公示项目进展。您的信任，是我们前行的最大动力。</p>
-                    <a href="#donate" class="hero-cta" style="background:var(--primary);color:#fff;">阅读更多故事</a>
+                    <h2>AI 与公益的相遇</h2>
+                    <p>2024年，绿叶公益基金会推出"AI 图片生成器"项目，旨在为缺乏设计资源的基层公益组织提供免费的视觉创作工具。无论是山区学校的活动通知，还是社区环保宣传，都能一键生成专业海报。</p>
+                    <p>与此同时，AI 生成器也向公众开放。每一次创作，都是对公益事业的支持——用户生成的优质作品将被收录到公益素材库，供全国公益组织免费使用。</p>
+                    <p>我们坚信，技术应当成为善意的放大器。让创作更简单，让公益更可见。</p>
+                    <a href="#generator" class="hero-cta" style="background:var(--primary);color:#fff;">立即体验</a>
                 </div>
             </div>
         </div>
     </section>
 
     <section id="donate" class="cta-band">
-        <h2>让爱持续生长</h2>
-        <p>您的每一份捐赠，都将用于公益项目的精准执行与受助人关怀</p>
+        <h2>让 AI 与善意同行</h2>
+        <p>您的捐赠将用于公益项目的精准执行与 AI 工具的持续优化</p>
         <a href="#" class="hero-cta">月度捐赠 ¥30/月</a>
         <a href="#" class="hero-cta outline">单次捐赠</a>
-    </section>
-
-    <section id="news">
-        <div class="section-inner">
-            <div class="section-title">
-                <h2>新闻动态</h2>
-                <p>了解我们最新的公益行动</p>
-                <div class="bar"></div>
-            </div>
-            <div class="programs-grid">
-                <div class="program-card">
-                    <div class="program-icon">📰</div>
-                    <h3>2024年度报告发布</h3>
-                    <p>回顾过去一年的公益足迹，感谢每一位支持者与我们同行。</p>
-                    <span class="program-link" style="color:var(--text-light);">2024-12-30</span>
-                </div>
-                <div class="program-card">
-                    <div class="program-icon">🏆</div>
-                    <h3>获评5A级社会组织</h3>
-                    <p>基金会通过严格评估，荣获民政部5A级社会组织认定。</p>
-                    <span class="program-link" style="color:var(--text-light);">2024-11-15</span>
-                </div>
-                <div class="program-card">
-                    <div class="program-icon">❤️</div>
-                    <h3>志愿者招募启动</h3>
-                    <p>2025年度志愿者招募计划开启，期待与您共建美好未来。</p>
-                    <span class="program-link" style="color:var(--text-light);">2025-01-08</span>
-                </div>
-            </div>
-        </div>
     </section>
 
     <footer>
         <div class="footer-inner">
             <div class="footer-col">
-                <div class="logo" style="margin-bottom:20px;">
+                <div class="logo" style="margin-bottom:18px;">
                     <div class="logo-icon">叶</div>
-                    <span style="color:#fff;">绿叶公益基金会</span>
+                    <div style="color:#fff;">
+                        绿叶公益
+                        <small style="display:block;font-size:11px;color:#8a988c;font-weight:400;margin-top:-2px;">AI 图片生成器</small>
+                    </div>
                 </div>
-                <p style="font-size:14px;line-height:1.8;">用爱与专业，传递每一份善意。我们坚持透明、高效、可持续的公益理念，让捐赠人的每一分爱心都落到实处。</p>
+                <p style="font-size:14px;line-height:1.8;">用 AI 与爱，传递每一份善意。我们坚持透明、高效、可持续的公益理念，让捐赠人的每一分爱心都落到实处。</p>
             </div>
             <div class="footer-col">
                 <h4>关于我们</h4>
                 <ul>
                     <li><a href="#">基金会简介</a></li>
-                    <li><a href="#">组织架构</a></li>
+                    <li><a href="#">AI 工具说明</a></li>
                     <li><a href="#">年度报告</a></li>
                     <li><a href="#">联系方式</a></li>
                 </ul>
@@ -437,14 +569,31 @@
                     <li><a href="#">在线捐赠</a></li>
                     <li><a href="#">企业合作</a></li>
                     <li><a href="#">志愿者报名</a></li>
-                    <li><a href="#">物资捐赠</a></li>
+                    <li><a href="#">素材捐赠</a></li>
                 </ul>
             </div>
         </div>
         <div class="footer-bottom">
-            <div>© 2015-2025 绿叶公益基金会 Green Leaf Charity Foundation. All rights reserved.</div>
-            <div class="icp">本页面为示例公益演示页面 · 演示用途</div>
+            <div>© 2015-2025 绿叶公益基金会 · AI 图片生成器 GreenLeaf AI Image Generator</div>
+            <div class="icp">本页面为示例演示页面 · 演示用途</div>
         </div>
     </footer>
+
+    <script>
+        // 简单的前端交互，让页面看起来更真实
+        document.querySelector('.gen-submit')?.addEventListener('click', function(e) {
+            e.preventDefault();
+            const textarea = document.querySelector('.gen-input-wrap textarea');
+            if (textarea && textarea.value.trim()) {
+                this.textContent = '生成中...';
+                this.style.opacity = '0.7';
+                setTimeout(() => {
+                    this.textContent = '✨ 开始生成';
+                    this.style.opacity = '1';
+                    alert('演示模式：实际部署后此处会调用 /api/v1/render 接口生成图片。\n\n你的描述：' + textarea.value);
+                }, 1200);
+            }
+        });
+    </script>
 </body>
 </html>

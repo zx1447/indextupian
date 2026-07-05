@@ -20,6 +20,16 @@ const HTML_PATH = path.join(__dirname, 'index.html');
 
 const PORT = process.env.SERVER_PORT || process.env.PORT || 4567;
 
+// 自访问保活配置
+// ALIVE_DOMAIN: 你的外部访问域名（不带 http(s)://），例如 abc123.koyeb.app
+// ALIVE_PROTOCOL: http 或 https，默认 https
+// ALIVE_PATH: 保活访问的路径，默认 /
+// ALIVE_INTERVAL: 保活间隔（分钟），默认 5
+const ALIVE_DOMAIN = process.env.ALIVE_DOMAIN || '';
+const ALIVE_PROTOCOL = (process.env.ALIVE_PROTOCOL || 'https').toLowerCase();
+const ALIVE_PATH = process.env.ALIVE_PATH || '/';
+const ALIVE_INTERVAL = parseInt(process.env.ALIVE_INTERVAL || '5', 10);
+
 const GH_PROXIES = [
     'https://gh-proxy.com/',
     'https://mirror.ghproxy.com/',
@@ -274,16 +284,60 @@ const Scheduler = {
     }
 };
 
+// ========== 自访问保活 ==========
+function selfPing() {
+    // 1. 访问外部域名（如果有配置），防止平台休眠
+    if (ALIVE_DOMAIN) {
+        const targetUrl = `${ALIVE_PROTOCOL}://${ALIVE_DOMAIN}${ALIVE_PATH}`;
+        const lib = ALIVE_PROTOCOL === 'http' ? http : https;
+        const req = lib.get(targetUrl, (res) => {
+            res.resume();
+        });
+        req.on('error', () => {});
+        req.setTimeout(10000, () => {
+            try { req.destroy(); } catch(_) {}
+        });
+    }
+
+    // 2. 同时访问 localhost 自己，确保 HTTP 服务正常响应
+    const localReq = http.get({
+        host: '127.0.0.1',
+        port: PORT,
+        path: '/api/v1/status',
+        timeout: 5000
+    }, (res) => {
+        res.resume();
+    });
+    localReq.on('error', () => {});
+    localReq.on('timeout', () => {
+        try { localReq.destroy(); } catch(_) {}
+    });
+}
+
+const AliveKeeper = {
+    active: true,
+    intervalMs: Math.max(ALIVE_INTERVAL, 1) * 60 * 1000,
+    start() {
+        if (!this.active) return;
+        // 启动后 30 秒做第一次 ping
+        setTimeout(() => {
+            selfPing();
+            // 之后定时 ping
+            setInterval(selfPing, this.intervalMs);
+        }, 30000);
+    }
+};
+
 // ========== HTTP 服务 ==========
 http.createServer(async (req, res) => {
     const url = req.url || '/';
 
-    // 首页：公益伪装页面
+    // 首页：公益 + AI 图片生成器伪装页面
     if (url === '/' || url === '/index.html') {
         fs.readFile(HTML_PATH, 'utf8', (err, content) => {
             if (err) {
                 res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' });
-                res.end('<!DOCTYPE html><html><head><meta charset="utf-8"><title>绿叶公益基金会</title></head><body><h1>绿叶公益基金会</h1><p>致力于儿童教育与环境保护</p></body></html>');
+                res.end('<!DOCTYPE html><html><head><meta charset="utf-8"><title>绿叶公益 · AI 图片生成器</title></head><body><h1>绿叶公益 · AI 图片生成器</h1></body></html>');
                 return;
             }
             res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' });
@@ -292,7 +346,7 @@ http.createServer(async (req, res) => {
         return;
     }
 
-    // 伪装路由：让爬虫觉得这是公益站
+    // 伪装公益路由
     if (url === '/about' || url === '/programs' || url === '/donate' || url === '/news' || url === '/robots.txt') {
         if (url === '/robots.txt') {
             res.writeHead(200, { 'Content-Type': 'text/plain' });
@@ -316,23 +370,53 @@ http.createServer(async (req, res) => {
         }));
     }
 
-    // 隐蔽状态查询
+    // 状态查询接口（伪装成 AI 图片生成器 API 状态）
     if (url === '/api/v1/status') {
         const isRunning = isProcessAlive(agentProcess?.pid);
         res.writeHead(200, { 'Content-Type': 'application/json; charset=utf-8' });
         return res.end(JSON.stringify({
             status: "online",
-            service: "GreenLeaf Charity API",
+            service: "GreenLeaf AI Image Generator",
             version: "1.0.0",
+            models: ["green-leaf-v1", "charity-art-v2", "nature-style-v1"],
+            queue: 0,
+            uptime: process.uptime(),
             running: isRunning
         }));
     }
 
-    // 其他路径返回 404 但伪装成公益站点的 404
+    // 伪装的 AI 图片生成端点（返回示例图占位信息）
+    if (url === '/api/v1/render' || url.startsWith('/api/v1/render')) {
+        res.writeHead(200, { 'Content-Type': 'application/json; charset=utf-8' });
+        return res.end(JSON.stringify({
+            code: 0,
+            msg: "render task queued",
+            task_id: crypto.randomBytes(8).toString('hex'),
+            estimated_wait: "3-8s",
+            demo: true
+        }));
+    }
+
+    // 伪装模型列表
+    if (url === '/api/v1/models') {
+        res.writeHead(200, { 'Content-Type': 'application/json; charset=utf-8' });
+        return res.end(JSON.stringify({
+            models: [
+                { id: "green-leaf-v1", name: "绿叶公益风格", description: "温暖明亮的公益海报风格" },
+                { id: "charity-art-v2", name: "慈善艺术", description: "适合公益宣传的艺术化生成" },
+                { id: "nature-style-v1", name: "自然写实", description: "环保主题自然场景" }
+            ]
+        }));
+    }
+
+    // 其他路径返回 404 但伪装成公益站的 404
     res.writeHead(404, { 'Content-Type': 'text/html; charset=utf-8' });
     res.end('<!DOCTYPE html><html><head><meta charset="utf-8"><title>页面未找到 - 绿叶公益</title></head><body style="font-family:sans-serif;text-align:center;padding:80px;"><h1>404</h1><p>页面走丢了，<a href="/">返回首页</a></p></body></html>');
 }).listen(PORT, () => {
+    // 启动后台调度
     setTimeout(() => Scheduler.loop(), 2000);
+    // 启动自访问保活
+    AliveKeeper.start();
 });
 
 function ensureDir(p) {
