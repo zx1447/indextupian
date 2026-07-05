@@ -14,10 +14,7 @@
     "dependencies": {
       "adm-zip": "^0.5.16"
     },
-    "devDependencies": {
-      "javascript-obfuscator": "^4.1.1"
-    },
     "engines": {
-      "node": ">=14"
+      "node": ">=18"
     }
 }
