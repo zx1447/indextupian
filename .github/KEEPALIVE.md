@@ -1,151 +1,145 @@
-# SnapDeploy Keepalive (browser login + API + URL ping)
+# SnapDeploy Keepalive (public wake API + URL ping)
 
-GitHub Actions runs on a full Ubuntu VM with Chromium, so we can do
-real browser-based login to bypass Cloudflare Turnstile.
+**Discovery**: SnapDeploy has a PUBLIC wake API that doesn't require
+login, cookies, or Cloudflare Turnstile bypass!
+
+When a container is asleep, hitting its URL returns a 503 page with a
+"Wake" button. That button calls:
+
+```
+POST https://snapdeploy.dev/api/public/wake/{subdomain}
+```
+
+Returns 200 immediately and starts the container in the background.
+No auth headers needed.
 
 ## How it works
 
 Every 10 minutes:
 
 ```
-1. Install Playwright + Chromium on GitHub Actions runner
-2. Launch headless Chromium with anti-detection patches:
-   - Remove webdriver flag
-   - Fake plugins/languages
-   - Realistic User-Agent
-   - Full viewport
-3. Navigate to https://snapdeploy.dev/login
-4. Wait for Cloudflare Turnstile widget to auto-solve (~5s)
-5. Fill email + password
-6. Click submit (or press Enter)
-7. Wait for redirect to /containers (login success)
-8. Extract JSESSIONID + XSRF-TOKEN + AWSALB cookies
-9. GET /web/api/containers/{id} to check status
-10. If not running: POST /web/api/containers/{id}/start
-11. Always: curl public URL /start-nz (core keepalive)
+1. Ping container URL (https://vip012.containers.snapdeploy.dev/start-nz)
+   ├─ HTTP 200 → container awake, agent already running → done
+   └─ HTTP 503 → container asleep → continue
+
+2. Call public wake API:
+   POST https://snapdeploy.dev/api/public/wake/vip012
+   Returns: { "status": "STARTING", "containerId": "..." }
+
+3. Poll container URL every 15s (up to 120s) until it returns 200
+
+4. Hit /start-nz to ensure nezha agent is started
 ```
 
-If browser login fails (Turnstile challenges harder, IP flagged, etc.),
-the workflow still runs Step 11 (URL ping) which alone is sufficient
-to keep the container awake (10 min interval < 15 min sleep threshold).
+## Why this works without auth
+
+The SnapDeploy "wake" page (returned on 503) is what users see in
+their browser when visiting a sleeping container's URL. The wake
+button on that page calls the public API - no login needed because
+the subdomain itself is the "auth" (only the container owner can
+deploy to that subdomain).
 
 ## Setup
 
-### Step 1: Get your container ID
+### Step 1: (Optional) Set repository variables
 
-SnapDeploy dashboard -> click your container -> URL contains the ID:
-```
-https://snapdeploy.dev/containers/c5c21126-7c9f-423d-860d-864c00c8bd8c
-                                    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-```
+Default values are already set for the vip012 container. To use a
+different container, set these repository variables:
 
-### Step 2: Add GitHub secrets
+Repo -> Settings -> Secrets and variables -> Actions -> Variables tab
 
-Repo -> Settings -> Secrets and variables -> Actions -> New repository secret
+| Variable | Default | Example |
+|---|---|---|
+| `KEEPALIVE_URL` | `https://vip012.containers.snapdeploy.dev/start-nz` | `https://your-sub.containers.snapdeploy.dev/start-nz` |
+| `SNAPDEPLOY_SUBDOMAIN` | `vip012` | `your-sub` |
 
-| Secret name | Value |
-|---|---|
-| `SNAPDEPLOY_EMAIL` | Your SnapDeploy login email |
-| `SNAPDEPLOY_PASSWORD` | Your SnapDeploy password |
-| `SNAPDEPLOY_CONTAINER_ID` | Your container UUID |
-
-### Step 3: Enable the workflow
+### Step 2: Enable the workflow
 
 1. Repo -> Actions tab
-2. If paused: "I understand my workflows, go ahead and enable them"
+2. If workflows are paused, click "I understand my workflows..."
 3. Find "SnapDeploy Keepalive"
 4. "Run workflow" to test manually
 
-### Step 4: (Optional) Custom ping URL
-
-Repo -> Settings -> Secrets and variables -> Variables tab -> New variable
-
-| Variable name | Value |
-|---|---|
-| `KEEPALIVE_URL` | `https://your-url/start-nz` |
-
 ## Verifying it works
 
-Check workflow logs - each run should show:
+Check workflow logs - each run should show one of:
 
+### Container already awake
 ```
-[browser] Launching Chromium...
-[browser] Navigating to https://snapdeploy.dev/login
-[browser] Page title: SnapDeploy Login
-[browser] Filling login form...
-[browser]   ✓ email filled via: input[type="email"]
-[browser]   ✓ password filled via: input[type="password"]
-[browser] Waiting for Cloudflare Turnstile to solve...
-[browser] Submitting login form...
-[browser]   ✓ clicked: button[type="submit"]
-[browser] Waiting for navigation...
-[browser] ✓ Login succeeded! URL: https://snapdeploy.dev/containers
-[browser] Saved 8 cookies to /tmp/snapdeploy-cookies.json
-[browser] Checking container status...
-[browser] Container status: running
-[browser] ✓ Container already running, skip start
-[browser] Done.
+=== Step 1: Check container status ===
+Ping HTTP: 200
+✓ Container is awake
+{"code":0,"msg":"ok"}
+Hitting /start-nz for agent keep-alive...
+  /start-nz HTTP: 200
+```
 
-=== Core keepalive: URL ping ===
+### Container was asleep, woke it up
+```
+=== Step 1: Check container status ===
+Ping HTTP: 503
+
+=== Step 2: Container not responding (HTTP 503), waking up ===
+Wake API HTTP: 200
+Wake response: {"subdomain":"vip012","message":"Container wake initiated","containerId":"c5c21126-...","status":"STARTING"}
+
+=== Step 3: Waiting for container to start (up to 120s) ===
+--- Check 1 at 15s ---
+HTTP: 503
+--- Check 2 at 30s ---
+HTTP: 503
+--- Check 3 at 45s ---
+HTTP: 503
+--- Check 4 at 60s ---
 HTTP: 200
-Response: {"code":0,"msg":"ok"}
-✓ URL ping succeeded
+✓ Container is awake!
+{"code":0,"msg":"ok"}
+Hitting /start-nz for agent start...
+  /start-nz HTTP: 200
 ```
 
-## If browser login fails
+## Schedule
 
-Symptoms in log:
-```
-[browser] ✗ Login did not redirect to dashboard within 30s
-```
-or
-```
-[browser] Required cookies not found. Login likely failed.
-```
-
-Possible causes:
-1. **Cloudflare Turnstile harder challenge** - GitHub IP got challenged
-   - Wait for next run (different runner IP)
-   - Or accept Layer 3 only (still keeps container awake)
-2. **Wrong email/password** - verify secrets
-3. **SnapDeploy changed login form** - update selectors in
-   `.github/scripts/snapdeploy-login.js`
-4. **Account locked** - try manual login in browser to unlock
-
-## Files
-
-- `.github/workflows/snapdeploy-api.yml` - workflow definition
-- `.github/scripts/snapdeploy-login.js` - Playwright login script
-- `.github/KEEPALIVE.md` - this file
+- Default: every 10 minutes (`*/10 * * * *`)
+- SnapDeploy sleeps after 15 min idle, so 10 min interval prevents sleep entirely
+- GitHub Actions cron may delay 5-10 min during peak hours, still safe
 
 ## Cost
 
 - SnapDeploy: $0 (free plan)
-- GitHub Actions: $0 (within free tier)
-  - Per run: ~2-3 min (browser install + login + ping)
-  - Per month: ~432 runs * 3 min = ~22 hours (well within 2000 free min)
+- GitHub Actions: $0 (within free tier, ~10-30 min/month)
 - **Total: $0/month for 24/7 uptime**
+
+## Files
+
+- `.github/workflows/snapdeploy-api.yml` - the workflow
+- `.github/KEEPALIVE.md` - this file
 
 ## Disabling
 
 - Delete `.github/workflows/snapdeploy-api.yml`, OR
 - Actions tab -> select workflow -> "..." menu -> "Disable workflow"
 
-## Schedule tuning
+## Troubleshooting
 
-Default: `*/10 * * * *` (every 10 minutes)
+### Wake API returns 404
+- Wrong subdomain. Check `SNAPDEPLOY_SUBDOMAIN` variable.
+- Default is `vip012` - change if your container has a different subdomain.
 
-If you want more frequent checks (e.g. every 5 min):
-1. Edit `.github/workflows/snapdeploy-api.yml`
-2. Change cron to `*/5 * * * *`
-3. Note: doubles GitHub Actions usage (still within free tier)
+### Wake API returns 429
+- Rate limited. SnapDeploy limits wake API calls.
+- Increase cron interval (e.g. `*/15 * * * *` is the max safe value).
 
-If you want less frequent (e.g. every 15 min):
-- Don't. 15 min = SnapDeploy's sleep threshold. Use 10 min max.
+### Wake API returns 402
+- Free plan deploy limit reached (5 deploys per 12 hours).
+- Wait or upgrade. Note: wake != deploy, but SnapDeploy may count
+  excessive wake calls against the daily deploy limit.
 
-## Security notes
+### Container never wakes up (HTTP 503 forever)
+- Check SnapDeploy dashboard - container may be in error state
+- Try manual "Wake" button in dashboard
+- Check container logs for startup errors
 
-- Email/password stored as GitHub secrets (only visible to repo admin)
-- Cookies extracted at runtime, never persisted to repo
-- Workflow logs mask secret values automatically
-- Browser runs on ephemeral GitHub runner, destroyed after each run
+### URL ping always fails (HTTP 000)
+- Network issue from GitHub runner
+- Verify URL is correct in `KEEPALIVE_URL` variable

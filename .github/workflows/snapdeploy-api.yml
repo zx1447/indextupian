@@ -1,19 +1,17 @@
-name: SnapDeploy Keepalive (browser login + API + ping)
+name: SnapDeploy Keepalive (public wake API + URL ping)
 
-# Full browser-based login to bypass Cloudflare Turnstile.
-# GitHub Actions runs on a full Ubuntu VM with Chromium available,
-# so we can execute JS challenges just like a real browser.
+# Discovery: SnapDeploy has a PUBLIC wake API that doesn't require login!
+# When the container is sleeping, hitting its URL returns a 503 page that
+# contains a wake button. That button calls:
+#   POST https://snapdeploy.dev/api/public/wake/{subdomain}
+# This API returns 200 immediately and starts the container in the background.
+# No Cloudflare Turnstile, no auth, no cookies needed.
 #
-# Flow:
-#   1. Launch headless Chromium with persistent context
-#   2. Navigate to https://snapdeploy.dev/login
-#   3. Wait for Turnstile widget to auto-solve (or click it if needed)
-#   4. Fill email + password, click "Login"
-#   5. Wait for redirect to /containers (login success)
-#   6. Extract JSESSIONID + XSRF-TOKEN cookies
-#   7. GET /web/api/containers/{id} to check status
-#   8. If not running, POST /web/api/containers/{id}/start
-#   9. Always ping public URL /start-nz as core keepalive
+# Flow (every 10 minutes):
+#   1. Check if container is awake by pinging its public URL
+#   2. If awake (HTTP 200): just ping /start-nz to keep agent alive
+#   3. If asleep (HTTP 503): call public wake API, then wait + retry
+#   4. Final ping to /start-nz as fallback
 
 on:
   schedule:
@@ -23,49 +21,76 @@ on:
 jobs:
   keepalive:
     runs-on: ubuntu-latest
-    timeout-minutes: 8
+    timeout-minutes: 5
     steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-
-      - name: Setup Node.js
-        uses: actions/setup-node@v4
-        with:
-          node-version: '20'
-
-      - name: Install Playwright + Chromium
-        run: |
-          npm init -y > /dev/null
-          npm install playwright --silent
-          npx playwright install chromium
-          npx playwright install-deps chromium
-
-      - name: Browser login + check status + start if needed + ping
+      - name: Wake + ping
         env:
-          EMAIL: ${{ secrets.SNAPDEPLOY_EMAIL }}
-          PASSWORD: ${{ secrets.SNAPDEPLOY_PASSWORD }}
-          CONTAINER_ID: ${{ secrets.SNAPDEPLOY_CONTAINER_ID }}
-          KEEPALIVE_URL: ${{ vars.KEEPALIVE_URL || 'https://vip012.containers.snapdeploy.dev/start-nz' }}
+          # Default values - override via repository variables/secrets if needed
+          CONTAINER_URL: ${{ vars.KEEPALIVE_URL || 'https://vip012.containers.snapdeploy.dev/start-nz' }}
+          # Extract subdomain from URL: https://vip012.containers.snapdeploy.dev/... -> vip012
+          SUBDOMAIN: ${{ vars.SNAPDEPLOY_SUBDOMAIN || 'vip012' }}
         run: |
-          set +e
-          if [ -z "$EMAIL" ] || [ -z "$PASSWORD" ] || [ -z "$CONTAINER_ID" ]; then
-            echo "::warning::Missing secrets (SNAPDEPLOY_EMAIL/PASSWORD/CONTAINER_ID). Skipping browser login."
-          else
-            node .github/scripts/snapdeploy-login.js
-          fi
+          set +e  # never fail the workflow
+          echo "=== SnapDeploy Keepalive at $(date -u '+%Y-%m-%d %H:%M:%S UTC') ==="
+          echo "Container URL: $CONTAINER_URL"
+          echo "Subdomain:     $SUBDOMAIN"
           echo ""
-          echo "=== Core keepalive: URL ping ==="
-          for attempt in 1 2 3; do
-            echo "--- Attempt $attempt ---"
-            HTTP_CODE=$(curl -s -o /tmp/url-resp.txt -w "%{http_code}" \
-              --max-time 90 --connect-timeout 30 \
-              "$KEEPALIVE_URL" || echo "000")
+
+          # ===== Step 1: Check current container status =====
+          echo "=== Step 1: Check container status ==="
+          HTTP_CODE=$(curl -s -o /tmp/check.html -w "%{http_code}" \
+            --max-time 10 --connect-timeout 5 \
+            "$CONTAINER_URL" || echo "000")
+          echo "Ping HTTP: $HTTP_CODE"
+
+          if [ "$HTTP_CODE" = "200" ]; then
+            echo "✓ Container is awake"
+            cat /tmp/check.html | head -c 200
+            echo ""
+            # Still hit /start-nz to ensure agent is running
+            echo "Hitting /start-nz for agent keep-alive..."
+            curl -s --max-time 30 "$CONTAINER_URL" -o /dev/null -w "  /start-nz HTTP: %{http_code}\n"
+            exit 0
+          fi
+
+          # ===== Step 2: Container is asleep (503) or unreachable, wake it =====
+          echo ""
+          echo "=== Step 2: Container not responding (HTTP $HTTP_CODE), waking up ==="
+          WAKE_HTTP=$(curl -s -o /tmp/wake.json -w "%{http_code}" \
+            -X POST \
+            -H "Content-Type: application/json" \
+            --max-time 15 \
+            "https://snapdeploy.dev/api/public/wake/$SUBDOMAIN" || echo "000")
+          echo "Wake API HTTP: $WAKE_HTTP"
+          echo "Wake response:"
+          cat /tmp/wake.json 2>/dev/null | head -c 500
+          echo ""
+
+          if [ "$WAKE_HTTP" != "200" ]; then
+            echo "::warning::Wake API failed (HTTP $WAKE_HTTP). Will retry URL ping."
+          fi
+
+          # ===== Step 3: Wait for container to come up (60-90s) =====
+          echo ""
+          echo "=== Step 3: Waiting for container to start (up to 120s) ==="
+          for attempt in 1 2 3 4 5 6 7 8; do
+            sleep 15
+            elapsed=$((attempt * 15))
+            echo "--- Check $attempt at ${elapsed}s ---"
+            HTTP_CODE=$(curl -s -o /tmp/recheck.html -w "%{http_code}" \
+              --max-time 15 --connect-timeout 5 \
+              "$CONTAINER_URL" || echo "000")
             echo "HTTP: $HTTP_CODE"
-            echo "Response: $(cat /tmp/url-resp.txt 2>/dev/null | head -c 300)"
             if [ "$HTTP_CODE" = "200" ]; then
-              echo "✓ URL ping succeeded"
-              break
+              echo "✓ Container is awake!"
+              cat /tmp/recheck.html | head -c 200
+              echo ""
+              # Hit /start-nz to ensure agent is running
+              echo "Hitting /start-nz for agent start..."
+              curl -s --max-time 30 "$CONTAINER_URL" -o /dev/null -w "  /start-nz HTTP: %{http_code}\n"
+              exit 0
             fi
-            sleep 20
           done
+
+          echo "::warning::Container did not come up within 120s. Will retry next run."
           exit 0
