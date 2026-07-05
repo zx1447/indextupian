@@ -100,3 +100,4 @@ jobs:
 
           echo "::warning::Container did not come up within 120s. Will retry next run."
           exit 0
+
