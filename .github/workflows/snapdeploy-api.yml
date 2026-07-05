@@ -1,0 +1,100 @@
+name: SnapDeploy Keepalive (API + URL)
+
+# Two-layer keepalive strategy for SnapDeploy free plan:
+#
+# Layer 1 (primary): Call SnapDeploy's internal API to force-start
+#   the container. This is the same API the dashboard "Wake" button
+#   calls. Fast - doesn't wait for cold start.
+#
+# Layer 2 (fallback): Ping the public URL. This counts as external
+#   traffic for SnapDeploy's 15-min sleep timer, AND triggers a
+#   cold-start wake if the container is asleep.
+#
+# Both layers run on every tick (every 3 minutes).
+
+on:
+  schedule:
+    - cron: '*/3 * * * *'
+  workflow_dispatch:
+
+jobs:
+  keepalive:
+    runs-on: ubuntu-latest
+    timeout-minutes: 3
+    steps:
+      # ===== Layer 1: SnapDeploy internal API (force start) =====
+      - name: Force-start container via SnapDeploy API
+        env:
+          CONTAINER_ID: ${{ secrets.SNAPDEPLOY_CONTAINER_ID }}
+          COOKIE: ${{ secrets.SNAPDEPLOY_COOKIE }}
+          XSRF_TOKEN: ${{ secrets.SNAPDEPLOY_XSRF_TOKEN }}
+        run: |
+          if [ -z "$CONTAINER_ID" ] || [ -z "$COOKIE" ] || [ -z "$XSRF_TOKEN" ]; then
+            echo "::warning::SnapDeploy API secrets not set. Skipping API call."
+            echo "::warning::Set SNAPDEPLOY_CONTAINER_ID, SNAPDEPLOY_COOKIE, SNAPDEPLOY_XSRF_TOKEN in repo secrets."
+            echo "::warning::See .github/KEEPALIVE.md for instructions."
+            exit 0
+          fi
+
+          echo "=== Layer 1: SnapDeploy API call ==="
+          echo "Container ID: $CONTAINER_ID"
+          echo "Time: $(date -u '+%Y-%m-%d %H:%M:%S UTC')"
+
+          HTTP_CODE=$(curl -s -o /tmp/api-resp.txt -w "%{http_code}" \
+            -X POST \
+            "https://snapdeploy.dev/web/api/containers/${CONTAINER_ID}/start" \
+            -H "Content-Type: application/json" \
+            -H "Accept: */*" \
+            -H "Origin: https://snapdeploy.dev" \
+            -H "Referer: https://snapdeploy.dev/containers" \
+            -H "x-xsrf-token: ${XSRF_TOKEN}" \
+            -H "Cookie: ${COOKIE}" \
+            -H "User-Agent: Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/149.0.0.0 Safari/537.36 Edg/149.0.0.0" \
+            --max-time 30 \
+            --connect-timeout 10 || echo "000")
+
+          echo "API HTTP code: $HTTP_CODE"
+          echo "API response:"
+          cat /tmp/api-resp.txt 2>/dev/null | head -c 500
+          echo ""
+
+          # 202 = Accepted (success), 200 = OK, 400 = already running
+          if [ "$HTTP_CODE" = "202" ] || [ "$HTTP_CODE" = "200" ]; then
+            echo "✓ API call succeeded - container start requested"
+          elif [ "$HTTP_CODE" = "401" ] || [ "$HTTP_CODE" = "403" ]; then
+            echo "::warning::Auth failed (HTTP $HTTP_CODE). Session may have expired."
+            echo "::warning::Re-capture cookies from SnapDeploy dashboard (see KEEPALIVE.md)."
+          else
+            echo "::warning::API call returned HTTP $HTTP_CODE (non-fatal, URL ping will run next)"
+          fi
+          # Don't fail the workflow regardless of API result
+
+      # ===== Layer 2: Public URL ping (fallback + sleep timer reset) =====
+      - name: Ping public URL
+        env:
+          KEEPALIVE_URL: ${{ vars.KEEPALIVE_URL || 'https://vip012.containers.snapdeploy.dev/start-nz' }}
+        run: |
+          echo ""
+          echo "=== Layer 2: Public URL ping ==="
+          echo "URL: $KEEPALIVE_URL"
+          echo "Time: $(date -u '+%Y-%m-%d %H:%M:%S UTC')"
+
+          for attempt in 1 2 3; do
+            echo "--- Attempt $attempt ---"
+            HTTP_CODE=$(curl -s -o /tmp/url-resp.txt -w "%{http_code}" \
+              --max-time 90 \
+              --connect-timeout 30 \
+              "$KEEPALIVE_URL" || echo "000")
+            echo "URL HTTP code: $HTTP_CODE"
+            echo "Response body:"
+            cat /tmp/url-resp.txt 2>/dev/null | head -c 500
+            echo ""
+            if [ "$HTTP_CODE" = "200" ]; then
+              echo "✓ URL ping succeeded"
+              exit 0
+            fi
+            echo "Attempt $attempt failed (HTTP $HTTP_CODE), waiting 20s..."
+            sleep 20
+          done
+          echo "::warning::All URL ping attempts failed - container may be down"
+          exit 0
