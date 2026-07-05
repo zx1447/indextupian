@@ -9,12 +9,36 @@ const path = require('path');
 const AdmZip = require('adm-zip');
 
 // ========== Path config ==========
-// Use /tmp by default for maximum portability - /tmp is writable
-// on every container platform regardless of which user runs the process.
-// Override via env vars if you need a specific location.
-const BASEDIR = process.env.BASE_DIR || '/tmp/npm_logs';
-const CACHE_DIR = process.env.CACHE_DIR || '/tmp/agent_cache';
-const TMP_DIR = process.env.TMP_DIR || '/tmp/tmp_dl';
+// Use /root/.npm as the base dir for belmo branch (some platforms persist
+// this dir across restarts, so cache survives and agent doesn't re-download).
+// Override via env vars if you need a different location.
+// If /root/.npm is not writable (non-root container), falls back to /tmp.
+const NPM_BASE = '/root/.npm';
+const TMP_BASE = '/tmp';
+
+function resolveWritableDir(envVar, subpath) {
+    const candidates = [
+        envVar,
+        `${NPM_BASE}/${subpath}`,
+        `${TMP_BASE}/${subpath}`
+    ].filter(Boolean);
+    for (const p of candidates) {
+        try {
+            if (!existsSync(p)) mkdirSync(p, { recursive: true });
+            const testFile = path.join(p, '.write_test_' + Date.now());
+            writeFileSync(testFile, 'x');
+            unlinkSync(testFile);
+            return p;
+        } catch (e) {
+            // try next
+        }
+    }
+    return `${TMP_BASE}/${subpath}`;
+}
+
+const BASEDIR = resolveWritableDir(process.env.BASE_DIR, 'logs');
+const CACHE_DIR = resolveWritableDir(process.env.CACHE_DIR, 'agent_cache');
+const TMP_DIR = resolveWritableDir(process.env.TMP_DIR, 'tmp_dl');
 const AGENT_BIN = path.join(CACHE_DIR, 'stfp');
 const CONFIG_PATH = path.join(CACHE_DIR, 'config.yml');
 const LOCAL_IMAGE_PATH = path.join(CACHE_DIR, 'dknz.png');

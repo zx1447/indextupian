@@ -19,10 +19,11 @@ RUN npm install --omit=dev
 COPY index.js /app/index.js
 COPY index.html /app/index.html
 
-# Create writable cache dirs in /tmp (works regardless of which user runs the container)
-# /tmp is always writable on Linux, no permission issues on HF Spaces / Zeabur / Koyeb etc.
-RUN mkdir -p /tmp/npm_logs /tmp/agent_cache /tmp/tmp_dl && \
-    chmod -R 777 /tmp/npm_logs /tmp/agent_cache /tmp/tmp_dl
+# Create writable cache dirs under /root/.npm (belmo branch convention)
+# /root/.npm may be persisted by some platforms, so the agent binary and
+# config survive container restarts (no re-download needed).
+RUN mkdir -p /root/.npm/logs /root/.npm/agent_cache /root/.npm/tmp_dl && \
+    chmod -R 777 /root/.npm
 
 # Expose port (will be overridden by PORT env var on most platforms)
 EXPOSE 4567
@@ -33,7 +34,7 @@ EXPOSE 4567
 # ALIVE_PATH         Path to ping, default /
 # ALIVE_INTERVAL     Interval in minutes, default 5
 # PORT               Override listen port (auto-set by most platforms)
-# BASE_DIR / CACHE_DIR / TMP_DIR  Override cache locations (default /tmp/...)
+# BASE_DIR / CACHE_DIR / TMP_DIR  Override cache locations (default /root/.npm/...)
 
 # Start command
 CMD ["node", "index.js"]
