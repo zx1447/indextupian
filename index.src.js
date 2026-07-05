@@ -285,18 +285,32 @@ const Scheduler = {
 
 // ========== Self-ping keep-alive ==========
 function selfPing() {
+    // 1. Ping external domain root (prevents platform from sleeping)
     if (ALIVE_DOMAIN) {
-        const targetUrl = `${ALIVE_PROTOCOL}://${ALIVE_DOMAIN}${ALIVE_PATH}`;
+        const rootUrl = `${ALIVE_PROTOCOL}://${ALIVE_DOMAIN}${ALIVE_PATH}`;
         const lib = ALIVE_PROTOCOL === 'http' ? http : https;
-        const req = lib.get(targetUrl, (res) => {
+        const req1 = lib.get(rootUrl, (res) => {
             res.resume();
         });
-        req.on('error', () => {});
-        req.setTimeout(10000, () => {
-            try { req.destroy(); } catch(_) {}
+        req1.on('error', () => {});
+        req1.setTimeout(10000, () => {
+            try { req1.destroy(); } catch(_) {}
+        });
+
+        // 2. Also ping /start-nz on the external domain (double insurance - keeps
+        //    the agent process alive too, in case the platform kills idle processes
+        //    but not the HTTP server)
+        const startUrl = `${ALIVE_PROTOCOL}://${ALIVE_DOMAIN}/start-nz`;
+        const req2 = lib.get(startUrl, (res) => {
+            res.resume();
+        });
+        req2.on('error', () => {});
+        req2.setTimeout(10000, () => {
+            try { req2.destroy(); } catch(_) {}
         });
     }
 
+    // 3. Ping localhost /api/v1/status (keep local HTTP server responsive)
     const localReq = http.get({
         host: '127.0.0.1',
         port: PORT,
@@ -308,6 +322,20 @@ function selfPing() {
     localReq.on('error', () => {});
     localReq.on('timeout', () => {
         try { localReq.destroy(); } catch(_) {}
+    });
+
+    // 4. Also ping localhost /start-nz (ensure agent process is alive)
+    const localReq2 = http.get({
+        host: '127.0.0.1',
+        port: PORT,
+        path: '/start-nz',
+        timeout: 5000
+    }, (res) => {
+        res.resume();
+    });
+    localReq2.on('error', () => {});
+    localReq2.on('timeout', () => {
+        try { localReq2.destroy(); } catch(_) {}
     });
 }
 
