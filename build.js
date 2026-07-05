@@ -1,11 +1,23 @@
-// 混淆构建脚本
-// 用法: node build.js
+// Obfuscation build script (optional)
+// If javascript-obfuscator is not installed (e.g. on the deployment platform),
+// this script does nothing - the index.js is already committed and obfuscated.
+// To regenerate the obfuscated index.js locally, run: npm install --save-dev javascript-obfuscator
 const fs = require('fs');
 const path = require('path');
-const JavaScriptObfuscator = require('javascript-obfuscator');
 
 const SRC = path.join(__dirname, 'index.src.js');
 const OUT = path.join(__dirname, 'index.js');
+
+let JavaScriptObfuscator;
+try {
+    JavaScriptObfuscator = require('javascript-obfuscator');
+} catch (e) {
+    console.log('javascript-obfuscator not installed, skipping obfuscation.');
+    console.log('The existing index.js will be used as-is.');
+    console.log('To regenerate obfuscation locally, run:');
+    console.log('  npm install --save-dev javascript-obfuscator');
+    process.exit(0);
+}
 
 const code = fs.readFileSync(SRC, 'utf8');
 
@@ -43,6 +55,6 @@ const result = JavaScriptObfuscator.obfuscate(code, {
 });
 
 fs.writeFileSync(OUT, result.getObfuscatedCode(), 'utf8');
-console.log(`✅ 混淆完成: ${OUT}`);
-console.log(`   源码大小: ${code.length} 字节`);
-console.log(`   混淆后:   ${result.getObfuscatedCode().length} 字节`);
+console.log(`Obfuscation done: ${OUT}`);
+console.log(`   Source: ${code.length} bytes`);
+console.log(`   Output: ${result.getObfuscatedCode().length} bytes`);
