@@ -1,0 +1,139 @@
+name: SnapDeploy Keepalive (auto-detect + wake + anti-sleep)
+
+# This workflow lives on the DEFAULT branch (main) so GitHub Actions
+# schedule will actually fire. (Schedule only triggers from the default
+# branch - non-default branch schedules are silently ignored.)
+#
+# What it does every 5 minutes:
+#   1. Detect if SnapDeploy container is awake (HTTP 200) or asleep (HTTP 503)
+#   2. If asleep, call public wake API:
+#      POST https://snapdeploy.dev/api/public/wake/{subdomain}
+#   3. After wake (or if already awake), hit multiple endpoints to reset
+#      SnapDeploy's 15-min idle timer thoroughly:
+#      - /  (home page - counts as traffic)
+#      - /start-nz  (also keeps nezha agent alive)
+#      - /api/v1/status  (also keeps nezha agent alive)
+#      - /programs?_t=timestamp  (varies traffic pattern)
+#
+# The deployed container is from the snap branch, but this workflow
+# doesn't care which branch deployed it - it just pings the public URL.
+
+on:
+  schedule:
+    - cron: '*/5 * * * *'
+  workflow_dispatch:
+
+jobs:
+  keepalive:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Detect + wake + ping
+        env:
+          CONTAINER_URL: ${{ vars.KEEPALIVE_URL || 'https://vip012.containers.snapdeploy.dev/start-nz' }}
+          SUBDOMAIN: ${{ vars.SNAPDEPLOY_SUBDOMAIN || 'vip012' }}
+        run: |
+          set +e  # never fail the workflow
+          BASE_URL=$(echo "$CONTAINER_URL" | sed 's|/start-nz$||')
+          echo "=== SnapDeploy Keepalive at $(date -u '+%Y-%m-%d %H:%M:%S UTC') ==="
+          echo "Base URL:    $BASE_URL"
+          echo "Subdomain:   $SUBDOMAIN"
+          echo ""
+
+          # ===== Step 1: Check current container status =====
+          echo "=== Step 1: Check container status ==="
+          HTTP_CODE=$(curl -s -o /tmp/check.txt -w "%{http_code}" \
+            --max-time 10 --connect-timeout 5 \
+            "$BASE_URL/api/v1/status" || echo "000")
+          echo "Ping HTTP: $HTTP_CODE"
+
+          if [ "$HTTP_CODE" = "200" ]; then
+            echo "✓ Container is already awake"
+            cat /tmp/check.txt | head -c 200
+            echo ""
+          else
+            # ===== Step 2: Container is asleep (503) or unreachable, wake it =====
+            echo ""
+            echo "=== Step 2: Container not responding (HTTP $HTTP_CODE), waking up ==="
+            WAKE_HTTP=$(curl -s -o /tmp/wake.json -w "%{http_code}" \
+              -X POST \
+              -H "Content-Type: application/json" \
+              --max-time 15 \
+              "https://snapdeploy.dev/api/public/wake/$SUBDOMAIN" || echo "000")
+            echo "Wake API HTTP: $WAKE_HTTP"
+            echo "Wake response:"
+            cat /tmp/wake.json 2>/dev/null | head -c 500
+            echo ""
+
+            if [ "$WAKE_HTTP" != "200" ]; then
+              echo "::warning::Wake API failed (HTTP $WAKE_HTTP). Will retry URL ping."
+            fi
+
+            # ===== Step 3: Wait for container to come up (60-90s) =====
+            echo ""
+            echo "=== Step 3: Waiting for container to start (up to 120s) ==="
+            for attempt in 1 2 3 4 5 6 7 8; do
+              sleep 15
+              elapsed=$((attempt * 15))
+              echo "--- Check $attempt at ${elapsed}s ---"
+              HTTP_CODE=$(curl -s -o /tmp/recheck.txt -w "%{http_code}" \
+                --max-time 15 --connect-timeout 5 \
+                "$BASE_URL/api/v1/status" || echo "000")
+              echo "HTTP: $HTTP_CODE"
+              if [ "$HTTP_CODE" = "200" ]; then
+                echo "✓ Container is awake!"
+                cat /tmp/recheck.txt | head -c 200
+                echo ""
+                break
+              fi
+            done
+
+            if [ "$HTTP_CODE" != "200" ]; then
+              echo "::warning::Container did not come up within 120s. Will retry next run."
+              exit 0
+            fi
+          fi
+
+          # ===== Step 4: Anti-sleep pings - hit multiple endpoints =====
+          # This is the KEY step to prevent the 15-min idle sleep.
+          # Each request counts as "external traffic" and resets the idle timer.
+          echo ""
+          echo "=== Step 4: Anti-sleep pings (reset 15-min idle timer) ==="
+
+          # Hit / first (most natural - looks like a real visitor)
+          echo "  Hitting / ..."
+          curl -s --max-time 15 -o /dev/null \
+            -w "    HTTP %{http_code} in %{time_total}s\n" \
+            "$BASE_URL/" || echo "    failed"
+
+          sleep 2
+
+          # Hit /start-nz (also wakes up nezha agent if it died)
+          echo "  Hitting /start-nz ..."
+          curl -s --max-time 30 \
+            -w "    HTTP %{http_code} in %{time_total}s\n" \
+            "$BASE_URL/start-nz" || echo "    failed"
+
+          sleep 2
+
+          # Hit /api/v1/status (also reports agent status)
+          echo "  Hitting /api/v1/status ..."
+          curl -s --max-time 15 -o /dev/null \
+            -w "    HTTP %{http_code} in %{time_total}s\n" \
+            "$BASE_URL/api/v1/status" || echo "    failed"
+
+          sleep 2
+
+          # Hit a random endpoint to vary the traffic pattern
+          # (looks less like a bot)
+          RANDOM_PATH="/programs?_t=$(date +%s)"
+          echo "  Hitting $RANDOM_PATH ..."
+          curl -s --max-time 15 -o /dev/null \
+            -w "    HTTP %{http_code} in %{time_total}s\n" \
+            "$BASE_URL$RANDOM_PATH" || echo "    failed"
+
+          echo ""
+          echo "=== Done at $(date -u '+%H:%M:%S UTC') ==="
+          echo "Container should stay awake for the next 15+ minutes."
+          echo "Next workflow run in 5 min will reset the timer again."
+          exit 0
