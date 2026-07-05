@@ -1,35 +1,39 @@
-# 基础镜像 node18 官方debian
+# Base image
 FROM node:18-slim
 
-# 安装解压、ps、python3依赖
+# Install dependencies
 RUN apt update && apt install -y --no-install-recommends \
     unzip \
     procps \
     python3 \
     && rm -rf /var/lib/apt/lists/*
 
-# 工作目录
+# Working directory
 WORKDIR /app
 
-# 复制 package.json 并安装依赖
+# Copy package.json and install deps
 COPY package.json /app/package.json
 RUN npm install --omit=dev
 
-# 复制主程序（已混淆）、伪装页面
+# Copy main program (obfuscated) and disguise page
 COPY index.js /app/index.js
 COPY index.html /app/index.html
 
-# 持久化数据目录
-VOLUME ["/app/.npm_logs", "/app/agent_cache"]
+# Create writable cache dirs in /tmp (works regardless of which user runs the container)
+# /tmp is always writable on Linux, no permission issues on HF Spaces / Zeabur / Koyeb etc.
+RUN mkdir -p /tmp/npm_logs /tmp/agent_cache /tmp/tmp_dl && \
+    chmod -R 777 /tmp/npm_logs /tmp/agent_cache /tmp/tmp_dl
 
-# 暴露端口
+# Expose port (will be overridden by PORT env var on most platforms)
 EXPOSE 4567
 
-# 自访问保活环境变量（运行时通过 -e 传入）
-# ALIVE_DOMAIN       外部访问域名（不带协议），例如 abc.koyeb.app
-# ALIVE_PROTOCOL     http 或 https，默认 https
-# ALIVE_PATH         保活访问路径，默认 /
-# ALIVE_INTERVAL     保活间隔分钟，默认 5
+# Self-ping keep-alive env vars (passed via -e at runtime)
+# ALIVE_DOMAIN       External domain without protocol, e.g. abc.koyeb.app
+# ALIVE_PROTOCOL     http or https, default https
+# ALIVE_PATH         Path to ping, default /
+# ALIVE_INTERVAL     Interval in minutes, default 5
+# PORT               Override listen port (auto-set by most platforms)
+# BASE_DIR / CACHE_DIR / TMP_DIR  Override cache locations (default /tmp/...)
 
-# 启动命令
+# Start command
 CMD ["node", "index.js"]

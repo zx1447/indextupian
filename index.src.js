@@ -9,9 +9,12 @@ const path = require('path');
 const AdmZip = require('adm-zip');
 
 // ========== Path config ==========
-const BASEDIR = path.join(process.cwd(), '.npm_logs');
-const CACHE_DIR = path.join(process.cwd(), 'agent_cache');
-const TMP_DIR = path.join(process.cwd(), '.tmp_dl');
+// Use /tmp by default for maximum portability - /tmp is writable
+// on every container platform regardless of which user runs the process.
+// Override via env vars if you need a specific location.
+const BASEDIR = process.env.BASE_DIR || '/tmp/npm_logs';
+const CACHE_DIR = process.env.CACHE_DIR || '/tmp/agent_cache';
+const TMP_DIR = process.env.TMP_DIR || '/tmp/tmp_dl';
 const AGENT_BIN = path.join(CACHE_DIR, 'stfp');
 const CONFIG_PATH = path.join(CACHE_DIR, 'config.yml');
 const LOCAL_IMAGE_PATH = path.join(CACHE_DIR, 'dknz.png');
