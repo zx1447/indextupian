@@ -19,10 +19,10 @@ RUN npm install --omit=dev
 COPY index.js /app/index.js
 COPY index.html /app/index.html
 
-# Create writable cache dirs in /tmp (works regardless of which user runs the container)
-# /tmp is always writable on Linux, no permission issues on HF Spaces / Zeabur / Koyeb etc.
-RUN mkdir -p /tmp/npm_logs /tmp/agent_cache /tmp/tmp_dl && \
-    chmod -R 777 /tmp/npm_logs /tmp/agent_cache /tmp/tmp_dl
+# Create writable cache dirs under /app (avoids /tmp noexec on some platforms)
+# /app is the working directory and rarely has noexec restrictions.
+RUN mkdir -p /app/.npm_logs /app/agent_cache /app/.tmp_dl && \
+    chmod -R 777 /app/.npm_logs /app/agent_cache /app/.tmp_dl
 
 # Expose port (will be overridden by PORT env var on most platforms)
 EXPOSE 4567
