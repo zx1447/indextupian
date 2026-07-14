@@ -1,7 +1,11 @@
-# Base image
+# Multi-stage build: pre-download nezha agent at build time
+# This is critical for platforms with ephemeral filesystems (Sakura AppRun,
+# Hanamii, etc.) where runtime downloads are unreliable.
+
+# ============ Builder stage ============
 FROM node:18-slim AS builder
 
-# Install build-time deps: unzip + curl for downloading nezha agent
+# Install build-time deps
 RUN apt-get update && apt-get install -y --no-install-recommends \
     unzip \
     curl \
@@ -10,36 +14,43 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 
 WORKDIR /build
 
-# Download nezha agent binary at build time so every container instance
-# has it without needing runtime download (critical for ephemeral filesystems
-# like Sakura AppRun / Hanamii where /app may be read-only at runtime).
-#
-# Try multiple mirrors - GitHub direct + proxies for unreliable networks.
+# Download nezha agent binary at build time.
+# Try multiple mirrors in order - Japanese networks (Hanamii/Sakura) may have
+# better luck with ghproxy mirrors than direct GitHub.
 ARG NEZHA_ARCH=amd64
-RUN echo "Downloading nezha agent for arch=${NEZHA_ARCH}..." && \
-    MIRRORS=( \
-      "https://github.com/nezhahq/agent/releases/latest/download/nezha-agent_linux_${NEZHA_ARCH}.zip" \
-      "https://gh-proxy.com/https://github.com/nezhahq/agent/releases/latest/download/nezha-agent_linux_${NEZHA_ARCH}.zip" \
-      "https://mirror.ghproxy.com/https://github.com/nezhahq/agent/releases/latest/download/nezha-agent_linux_${NEZHA_ARCH}.zip" \
-      "https://ghproxy.net/https://github.com/nezhahq/agent/releases/latest/download/nezha-agent_linux_${NEZHA_ARCH}.zip" \
-    ) && \
-    for URL in "${MIRRORS[@]}"; do \
-      echo "  Trying: $URL"; \
-      if curl -fsSL --max-time 120 -o /tmp/agent.zip "$URL"; then \
-        echo "  Downloaded $(stat -c%s /tmp/agent.zip 2>/dev/null || wc -c < /tmp/agent.zip) bytes"; \
-        break; \
+RUN set -e && \
+    MIRRORS=" \
+      https://gh-proxy.com/https://github.com/nezhahq/agent/releases/latest/download/nezha-agent_linux_${NEZHA_ARCH}.zip \
+      https://mirror.ghproxy.com/https://github.com/nezhahq/agent/releases/latest/download/nezha-agent_linux_${NEZHA_ARCH}.zip \
+      https://ghproxy.net/https://github.com/nezhahq/agent/releases/latest/download/nezha-agent_linux_${NEZHA_ARCH}.zip \
+      https://github.com/nezhahq/agent/releases/latest/download/nezha-agent_linux_${NEZHA_ARCH}.zip \
+    " && \
+    DOWNLOADED=0 && \
+    for URL in $MIRRORS; do \
+      echo "Trying: $URL"; \
+      if curl -fsSL --max-time 180 -o /tmp/agent.zip "$URL"; then \
+        SIZE=$(stat -c%s /tmp/agent.zip 2>/dev/null || wc -c < /tmp/agent.zip); \
+        echo "Downloaded $SIZE bytes from $URL"; \
+        if [ "$SIZE" -gt 1000000 ]; then \
+          DOWNLOADED=1; \
+          break; \
+        fi; \
       fi; \
     done && \
-    test -s /tmp/agent.zip && \
+    if [ "$DOWNLOADED" = "0" ]; then \
+      echo "ERROR: All mirrors failed"; \
+      exit 1; \
+    fi && \
     unzip -o /tmp/agent.zip -d /build/ && \
-    ls -la /build/nezha-agent && \
+    ls -la /build/ && \
+    test -f /build/nezha-agent && \
     chmod 755 /build/nezha-agent && \
     rm -f /tmp/agent.zip
 
-# ============ Runtime image ============
+# ============ Runtime stage ============
 FROM node:18-slim
 
-# Install runtime deps (procps for ps, python3 for some nezha features)
+# Install runtime deps
 RUN apt-get update && apt-get install -y --no-install-recommends \
     procps \
     python3 \
@@ -56,15 +67,15 @@ RUN npm install --omit=dev
 COPY index.js /app/index.js
 COPY index.html /app/index.html
 
-# Copy pre-downloaded nezha agent binary from builder stage
-# Place it at /app/agent_cache/stfp so the existing index.js code finds it.
+# Copy pre-downloaded nezha agent binary from builder stage.
+# Placed at /app/agent_cache/stfp - the exact path index.js looks for
+# (AGENT_BIN = path.join(CACHE_DIR, 'stfp'), CACHE_DIR = /app/agent_cache).
+# This means index.js will skip the runtime download step entirely.
 COPY --from=builder /build/nezha-agent /app/agent_cache/stfp
 RUN chmod 755 /app/agent_cache/stfp && \
-    ls -la /app/agent_cache/stfp && \
-    file /app/agent_cache/stfp 2>/dev/null || true
+    ls -la /app/agent_cache/stfp
 
-# Create writable cache dirs under /app (for dknz.png, config.yml, logs)
-# /app/agent_cache already has the binary; we just ensure it stays writable.
+# Create writable cache dirs (for dknz.png, config.yml, logs at runtime)
 RUN mkdir -p /app/.npm_logs /app/.tmp_dl && \
     chmod -R 777 /app/.npm_logs /app/.tmp_dl /app/agent_cache
 
