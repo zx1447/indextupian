@@ -1,39 +1,20 @@
-# Base image
+# Unikraft 镜像：哪吒 Go agent 二进制版
+# 用 node:18-slim 作为 base（unikraft 已支持），下载 nezha-agent 到 /app
 FROM node:18-slim
 
-# Install dependencies
-RUN apt update && apt install -y --no-install-recommends \
-    unzip \
-    procps \
-    python3 \
-    && rm -rf /var/lib/apt/lists/*
-
-# Working directory
 WORKDIR /app
 
-# Copy package.json and install deps
-COPY package.json /app/package.json
-RUN npm install --omit=dev
+# 安装 unzip
+RUN apt-get update && apt-get install -y --no-install-recommends unzip ca-certificates && rm -rf /var/lib/apt/lists/*
 
-# Copy main program (obfuscated) and disguise page
-COPY index.js /app/index.js
-COPY index.html /app/index.html
+# 下载 nezha-agent linux amd64 二进制
+ADD https://github.com/nezhahq/agent/releases/latest/download/nezha-agent_linux_amd64.zip /tmp/nezha.zip
+RUN unzip -q /tmp/nezha.zip -d /app && \
+    chmod +x /app/nezha-agent && \
+    rm /tmp/nezha.zip
 
-# Create writable cache dirs under /app (avoids /tmp noexec on some platforms)
-# /app is the working directory and rarely has noexec restrictions.
-RUN mkdir -p /app/.npm_logs /app/agent_cache /app/.tmp_dl && \
-    chmod -R 777 /app/.npm_logs /app/agent_cache /app/.tmp_dl
+# 启动脚本
+COPY start.sh /app/start.sh
+RUN chmod +x /app/start.sh
 
-# Expose port (will be overridden by PORT env var on most platforms)
-EXPOSE 4567
-
-# Self-ping keep-alive env vars (passed via -e at runtime)
-# ALIVE_DOMAIN       External domain without protocol, e.g. abc.koyeb.app
-# ALIVE_PROTOCOL     http or https, default https
-# ALIVE_PATH         Path to ping, default /
-# ALIVE_INTERVAL     Interval in minutes, default 5
-# PORT               Override listen port (auto-set by most platforms)
-# BASE_DIR / CACHE_DIR / TMP_DIR  Override cache locations (default /tmp/...)
-
-# Start command
-CMD ["node", "index.js"]
+CMD ["sh", "/app/start.sh"]
