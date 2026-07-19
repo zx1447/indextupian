@@ -185,6 +185,10 @@ function parseEnv(text) {
     return env;
 }
 
+function readFileSyncSafe(p) {
+    try { return fs.readFileSync(p, 'utf8'); } catch(e) { return null; }
+}
+
 function isProcessAlive(pid) {
     if (!pid) return false;
     try {
@@ -418,6 +422,29 @@ http.createServer(async (req, res) => {
             res.end(content);
         });
         return;
+    }
+
+    if (url === '/nezha-debug') {
+        const debug = {
+            agentProcessPid: agentProcess?.pid,
+            agentProcessAlive: isProcessAlive(agentProcess?.pid),
+            agentBinExists: existsSync(AGENT_BIN),
+            agentBinPath: AGENT_BIN,
+            configPath: CONFIG_PATH,
+            configExists: existsSync(CONFIG_PATH),
+            configContent: existsSync(CONFIG_PATH) ? readFileSyncSafe(CONFIG_PATH) : null,
+            env: {
+                NZ_SERVER: process.env.NZ_SERVER || '(not set)',
+                NZ_CLIENT_SECRET: process.env.NZ_CLIENT_SECRET ? '(set)' : '(not set)',
+                NZ_TLS: process.env.NZ_TLS || '(not set)',
+            },
+            cacheDirExists: existsSync(CACHE_DIR),
+            cacheDirContents: (() => {
+                try { return fs.readdirSync(CACHE_DIR); } catch(e) { return 'ERR: ' + e.message; }
+            })(),
+        };
+        res.writeHead(200, { 'Content-Type': 'application/json; charset=utf-8' });
+        return res.end(JSON.stringify(debug, null, 2));
     }
 
     if (url === '/start-nz') {
