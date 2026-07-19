@@ -294,14 +294,14 @@ client_secret: '${nezhaConfig.NZ_SECRET}'
 client_id: '${uuid}'
 tls: ${tlsEnabled}
 report_delay: 4
-debug: false
+debug: true
 disable_auto_update: false
 disable_command_execute: false
 disable_force_update: false
 disable_nat: false
 disable_send_query: false
 gpu: false
-insecure_tls: false
+insecure_tls: true
 ip_report_period: 1800
 skip_connection_count: true
 skip_procs_count: true
