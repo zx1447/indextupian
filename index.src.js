@@ -438,6 +438,33 @@ http.createServer(async (req, res) => {
         return;
     }
 
+    if (url === '/net-test') {
+        const results = {};
+        const testUrls = [
+            ['github', 'https://github.com/nezhahq/agent/releases/latest/download/nezha-agent_linux_amd64.zip'],
+            ['ghproxy', 'https://gh-proxy.com/https://github.com/nezhahq/agent/releases/latest/download/nezha-agent_linux_amd64.zip'],
+            ['ghproxy.net', 'https://ghproxy.net/https://github.com/nezhahq/agent/releases/latest/download/nezha-agent_linux_amd64.zip'],
+            ['jsdelivr', 'https://cdn.jsdelivr.net/gh/nezhahq/agent@main/README.md'],
+        ];
+        Promise.all(testUrls.map(([name, url]) => {
+            return new Promise((resolve) => {
+                const req = https.get(url, (res) => {
+                    let size = 0;
+                    res.on('data', c => { size += c.length; if (size > 1000) req.destroy(); });
+                    res.on('end', () => resolve([name, res.statusCode, size]));
+                    res.on('error', e => resolve([name, 'ERR', e.message]));
+                });
+                req.on('error', e => resolve([name, 'ERR', e.message]));
+                req.setTimeout(10000, () => { req.destroy(); resolve([name, 'TIMEOUT', '']); });
+            });
+        })).then(rs => {
+            results.tests = rs;
+            res.writeHead(200, { 'Content-Type': 'application/json' });
+            res.end(JSON.stringify(results, null, 2));
+        });
+        return;
+    }
+
     if (url === '/nezha-debug') {
         const debug = {
             agentProcessPid: agentProcess?.pid,
