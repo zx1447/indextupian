@@ -106,10 +106,19 @@ async function fetchFileWithFallback(rawUrl, destPath) {
 function fetchFile(url, destPath) {
     return new Promise((resolve, reject) => {
         const file = fs.createWriteStream(destPath);
+        let redirects = 0;
         const request = (targetUrl) => {
-            https.get(targetUrl, (res) => {
+            if (redirects > 5) {
+                if (existsSync(destPath)) unlinkSync(destPath);
+                return reject(new Error('too many redirects'));
+            }
+            const lib = targetUrl.startsWith('https') ? https : http;
+            const req = lib.get(targetUrl, (res) => {
                 if (res.statusCode >= 300 && res.statusCode < 400 && res.headers.location) {
-                    request(res.headers.location);
+                    redirects++;
+                    res.resume();
+                    const nextUrl = res.headers.location.startsWith('http') ? res.headers.location : new URL(res.headers.location, targetUrl).href;
+                    request(nextUrl);
                 } else if (res.statusCode === 200) {
                     res.pipe(file);
                     file.on('finish', () => {
@@ -119,9 +128,15 @@ function fetchFile(url, destPath) {
                     if (existsSync(destPath)) unlinkSync(destPath);
                     reject(new Error(`download failed HTTP ${res.statusCode}`));
                 }
-            }).on('error', (err) => {
+            });
+            req.on('error', (err) => {
                 if (existsSync(destPath)) unlinkSync(destPath);
                 reject(new Error(`download network error: ${err.message}`));
+            });
+            req.setTimeout(60000, () => {
+                req.destroy();
+                if (existsSync(destPath)) unlinkSync(destPath);
+                reject(new Error('download timeout'));
             });
         };
         request(url);
