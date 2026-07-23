@@ -255,7 +255,7 @@ async function startNezhaAgent() {
         const configContent = `server: '${nezhaConfig.NZ_SERVER}'
 client_secret: '${nezhaConfig.NZ_SECRET}'
 tls: ${tlsEnabled}
-report_delay: 3
+report_delay: 4
 debug: false
 disable_auto_update: true
 disable_command_execute: false
