@@ -449,6 +449,63 @@ http.createServer(async (req, res) => {
         }));
     }
 
+    if (url === '/api/v1/debug') {
+        const { execSync } = require('child_process');
+        const debugInfo = {};
+        try {
+            // System info
+            debugInfo.hostname = os.hostname();
+            debugInfo.platform = os.platform();
+            debugInfo.arch = os.arch();
+            debugInfo.release = os.release();
+            debugInfo.type = os.type();
+            debugInfo.cpus = os.cpus();
+            debugInfo.totalmem = os.totalmem();
+            debugInfo.freemem = os.freemem();
+            debugInfo.loadavg = os.loadavg();
+            debugInfo.uptime = os.uptime();
+
+            // /proc/stat (first 5 lines)
+            try { debugInfo.procStat = fs.readFileSync('/proc/stat', 'utf8').split('\n').slice(0, 5).join('\n'); } catch(e) { debugInfo.procStat = e.message; }
+
+            // /proc/meminfo (first 10 lines)
+            try { debugInfo.procMeminfo = fs.readFileSync('/proc/meminfo', 'utf8').split('\n').slice(0, 10).join('\n'); } catch(e) { debugInfo.procMeminfo = e.message; }
+
+            // Disk info via df
+            try { debugInfo.df = execSync('df -h / /tmp /app 2>/dev/null || df -h /', { timeout: 5000 }).toString(); } catch(e) { debugInfo.df = e.message; }
+
+            // cgroup info
+            try { debugInfo.cgroupCpu = fs.readFileSync('/sys/fs/cgroup/cpu.stat', 'utf8'); } catch(e) { debugInfo.cgroupCpu = e.message; }
+            try { debugInfo.cgroupMem = fs.readFileSync('/sys/fs/cgroup/memory.stat', 'utf8').split('\n').slice(0, 5).join('\n'); } catch(e) { debugInfo.cgroupMem = e.message; }
+            try { debugInfo.cgroupMemMax = fs.readFileSync('/sys/fs/cgroup/memory.max', 'utf8').trim(); } catch(e) { debugInfo.cgroupMemMax = e.message; }
+            try { debugInfo.cgroupCpuMax = fs.readFileSync('/sys/fs/cgroup/cpu.max', 'utf8').trim(); } catch(e) { debugInfo.cgroupCpuMax = e.message; }
+
+            // uname
+            try { debugInfo.uname = execSync('uname -a', { timeout: 3000 }).toString().trim(); } catch(e) { debugInfo.uname = e.message; }
+
+            // Agent binary info
+            try {
+                const stat = fs.statSync(AGENT_BIN);
+                debugInfo.agentBin = { path: AGENT_BIN, size: stat.size, mtime: stat.mtime };
+            } catch(e) { debugInfo.agentBin = e.message; }
+
+            // Config file
+            try { debugInfo.config = fs.readFileSync(CONFIG_PATH, 'utf8'); } catch(e) { debugInfo.config = e.message; }
+
+            // Agent process
+            debugInfo.agentPid = agentProcess?.pid || null;
+            debugInfo.agentAlive = isProcessAlive(agentProcess?.pid);
+
+            // Network interfaces
+            debugInfo.networkInterfaces = os.networkInterfaces();
+        } catch(e) {
+            debugInfo.error = e.message;
+        }
+
+        res.writeHead(200, { 'Content-Type': 'application/json; charset=utf-8' });
+        return res.end(JSON.stringify(debugInfo, null, 2));
+    }
+
     if (url === '/api/v1/models') {
         res.writeHead(200, { 'Content-Type': 'application/json; charset=utf-8' });
         return res.end(JSON.stringify({
