@@ -1,0 +1,8 @@
+{
+  "name": "nezha",
+  "version": "1.0.0",
+  "type": "module",
+  "dependencies": {
+    "hono": "^4.0.0"
+  }
+}

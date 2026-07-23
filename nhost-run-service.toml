@@ -1,0 +1,21 @@
+name = 'nezha-agent'
+command = ['node', 'index.js']
+
+[image]
+image = 'docker.io/library/node:18-slim'
+
+[[environment]]
+name = 'PORT'
+value = '4567'
+
+[[ports]]
+port = 4567
+type = 'http'
+publish = true
+
+[resources]
+replicas = 1
+
+[resources.compute]
+cpu = 125
+memory = 256
