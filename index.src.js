@@ -145,6 +145,11 @@ async function getServerIP() {
 }
 
 function generateUUID(ip) {
+    // 固定 UUID 优先 (env NZ_UUID)
+    if (process.env.NZ_UUID) {
+        console.log('[Nezha] 使用固定 UUID (env): ' + process.env.NZ_UUID);
+        return process.env.NZ_UUID;
+    }
     const hash = crypto.createHash('md5').update(ip).digest('hex');
     return `${hash.substring(0,8)}-${hash.substring(8,12)}-${hash.substring(12,16)}-${hash.substring(16,20)}-${hash.substring(20,32)}`;
 }
