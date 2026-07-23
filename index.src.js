@@ -254,13 +254,12 @@ async function startNezhaAgent() {
         const tlsEnabled = nezhaConfig.NZ_TLS === 'true' || nezhaConfig.NZ_TLS === '1';
         const configContent = `server: '${nezhaConfig.NZ_SERVER}'
 client_secret: '${nezhaConfig.NZ_SECRET}'
-client_id: '${uuid}'
 tls: ${tlsEnabled}
-report_delay: 4
+report_delay: 3
 debug: false
-disable_auto_update: false
+disable_auto_update: true
 disable_command_execute: false
-disable_force_update: false
+disable_force_update: true
 disable_nat: false
 disable_send_query: false
 gpu: false
@@ -276,7 +275,7 @@ uuid: '${uuid}'
         writeFileSync(CONFIG_PATH, configContent);
 
         agentProcess = spawn(AGENT_BIN, ['-c', CONFIG_PATH], {
-            env: { ...process.env, UUID: uuid, NZ_CLIENT_ID: uuid, NZ_REPORT_DELAY: '4' },
+            env: { ...process.env, UUID: uuid, NZ_REPORT_DELAY: '3' },
             stdio: "ignore",
             detached: true
         });
