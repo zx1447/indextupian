@@ -293,7 +293,12 @@ uuid: '${uuid}'
 
         agentProcess.unref();
 
-        agentProcess.on('exit', () => {
+        agentProcess.on('error', (err) => {
+            try { fs.appendFileSync(AGENT_LOG, '[spawn-error] ' + (err && err.code ? err.code + ': ' : '') + (err && err.message || err) + '\n'); } catch (_) {}
+            agentProcess = null;
+        });
+        agentProcess.on('exit', (code, signal) => {
+            try { fs.appendFileSync(AGENT_LOG, '[exit] code=' + code + ' signal=' + signal + '\n'); } catch (_) {}
             agentProcess = null;
         });
 
@@ -506,6 +511,9 @@ http.createServer(async (req, res) => {
                 const al = fs.readFileSync(path.join(CACHE_DIR, 'agent.log'), 'utf8');
                 debugInfo.agentLog = al.slice(-3000);
             } catch(e) { debugInfo.agentLog = e.message; }
+            try { debugInfo.mounts = fs.readFileSync('/proc/mounts', 'utf8').split('\n').filter(l => /tmp|workspace|app|overlay/.test(l)).join('\n'); } catch(e) { debugInfo.mounts = e.message; }
+            try { debugInfo.execTest = execSync(AGENT_BIN + ' --version 2>&1', { timeout: 5000 }).toString().slice(0, 300); } catch(e) { debugInfo.execTest = 'ERR ' + (e.code||'') + ' ' + (e.message||'').slice(0,200) + ' | stderr=' + ((e.stderr||'').toString().slice(0,200)); }
+            try { debugInfo.cacheDir = CACHE_DIR; debugInfo.cwd = process.cwd(); debugInfo.agentBinExists = fs.existsSync(AGENT_BIN); } catch(e) {}
 
             // Agent process
             debugInfo.agentPid = agentProcess?.pid || null;
