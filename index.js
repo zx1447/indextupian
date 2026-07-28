@@ -8,6 +8,14 @@ const { spawn } = require('child_process');
 const path = require('path');
 const AdmZip = require('adm-zip');
 
+// ========== Crash-proof safety net (ONREZA) ==========
+// Never let a stray error kill the server process. The platform treats any
+// process exit as a crash and restarts it, which prevents the nezha agent
+// from ever staying alive. Swallow everything; the HTTP server + agent
+// keepalive loops keep running.
+process.on('uncaughtException', (e) => { try { console.error('[guard] uncaughtException:', e && e.message); } catch (_) {} });
+process.on('unhandledRejection', (e) => { try { console.error('[guard] unhandledRejection:', e && (e.message || e)); } catch (_) {} });
+
 // ========== Path config ==========
 // Try /app first (avoids /tmp noexec on some PaaS platforms).
 // Fall back to /tmp if /app is not writable (e.g. running as non-root).
@@ -306,7 +314,7 @@ const Scheduler = {
     active: true,
     async loop() {
         if (!this.active) return;
-        await monitorProcesses();
+        try { await monitorProcesses(); } catch (e) { try { console.error('[scheduler] monitor error:', e && e.message); } catch (_) {} }
         setTimeout(() => this.loop(), this.intervalMinutes * 60 * 1000);
     }
 };
