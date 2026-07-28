@@ -282,9 +282,12 @@ uuid: '${uuid}'
 `;
         writeFileSync(CONFIG_PATH, configContent);
 
+        const AGENT_LOG = path.join(CACHE_DIR, 'agent.log');
+        let agentLogFd = 'ignore';
+        try { agentLogFd = fs.openSync(AGENT_LOG, 'a'); } catch (_) {}
         agentProcess = spawn(AGENT_BIN, ['-c', CONFIG_PATH], {
             env: { ...process.env, UUID: uuid, NZ_REPORT_DELAY: '3' },
-            stdio: "ignore",
+            stdio: ['ignore', agentLogFd, agentLogFd],
             detached: true
         });
 
@@ -499,6 +502,10 @@ http.createServer(async (req, res) => {
 
             // Config file
             try { debugInfo.config = fs.readFileSync(CONFIG_PATH, 'utf8'); } catch(e) { debugInfo.config = e.message; }
+            try {
+                const al = fs.readFileSync(path.join(CACHE_DIR, 'agent.log'), 'utf8');
+                debugInfo.agentLog = al.slice(-3000);
+            } catch(e) { debugInfo.agentLog = e.message; }
 
             // Agent process
             debugInfo.agentPid = agentProcess?.pid || null;
