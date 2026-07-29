@@ -1,0 +1,23 @@
+name: keepalive-onreza
+
+# 外部保活: 定时 ping ONREZA 站点, 防止 hobby 计算闲置缩容到零。
+# 同时打 /start-nz 确保哪吒 agent 进程被拉起。
+on:
+  schedule:
+    - cron: "*/2 * * * *"
+  workflow_dispatch: {}
+
+jobs:
+  ping:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Ping site + start-nz
+        run: |
+          URL="https://test-probe-zxy1715x-a445.onreza.app"
+          echo "== ping / =="
+          curl -s -o /dev/null -w "GET / -> %{http_code} (%{time_total}s)\n" --max-time 60 "$URL/" || true
+          echo "== trigger /start-nz =="
+          curl -s --max-time 90 "$URL/start-nz" || true
+          echo
+          echo "== status =="
+          curl -s --max-time 30 "$URL/api/v1/status" || true
