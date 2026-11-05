@@ -295,7 +295,7 @@ textarea:focus,input[type=text]:focus{border-color:#3f6fd8}
 
 <div class="card"><h2>模式一 · 临时隧道（什么都不填）</h2>
 <div class="steps">点一下就启动：自动创建 <b>trycloudflare.com</b> 临时隧道（免登录、免域名、免配置），生成 VLESS-TLS-WS 节点。域名随机，<b>停止或实例重启后失效</b>，重按一次即换新域名。</div>
-<button class="btn" id="bTemp" onclick="startTemp()">🚀 启动临时隧道并生成节点</button>
+<button class="btn" id="bTemp" onclick="startTemp()">启动临时隧道并生成节点</button>
 <div id="tempOut" class="hide mt"></div></div>
 
 <div class="card"><h2>模式二 · 固定隧道（固定域名 + Token）</h2>
@@ -308,7 +308,7 @@ textarea:focus,input[type=text]:focus{border-color:#3f6fd8}
 </div>
 <div class="grid">
 <div><label>WS 路径（默认 vless）</label><input type="text" id="path" placeholder="vless"></div>
-<div style="align-self:end"><button class="btn" id="bFix" onclick="startFixed()">🔒 启动固定隧道</button></div>
+<div style="align-self:end"><button class="btn" id="bFix" onclick="startFixed()">启动固定隧道</button></div>
 </div>
 <div id="fixOut" class="hide mt"></div></div>
 
