@@ -1,0 +1,103 @@
+<!doctype html>
+<html lang="zh"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>CF 节点生成器</title>
+<style>
+:root{color-scheme:dark}
+*{box-sizing:border-box}
+body{font:15px/1.65 system-ui,-apple-system,"Segoe UI",Roboto,"PingFang SC","Microsoft YaHei",sans-serif;background:#0b0f17;color:#dce3f0;max-width:880px;margin:0 auto;padding:22px 16px 60px}
+h1{font-size:21px;margin:6px 0 2px}
+.tip{color:#7e8ba6;font-size:12.5px;margin-bottom:16px}
+.card{background:#121927;border:1px solid #22304a;border-radius:12px;padding:15px 16px;margin-bottom:14px}
+.card h2{font-size:14px;color:#8fb7ff;margin:0 0 10px;font-weight:600}
+label{display:block;font-size:12.5px;color:#8b97ae;margin:9px 0 4px}
+textarea,input[type=text]{width:100%;background:#0d1420;color:#e8eef9;border:1px solid #263450;border-radius:8px;padding:8px 10px;font:13.5px/1.5 ui-monospace,Consolas,monospace;outline:none}
+textarea:focus,input[type=text]:focus{border-color:#3f6fd8}
+.chips{display:flex;flex-wrap:wrap;gap:6px}
+.chip{background:#0d1420;border:1px solid #263450;color:#9fb0cc;border-radius:999px;padding:3px 12px;font-size:12.5px;cursor:pointer}
+.chip.on{background:#1d3a75;border-color:#3f6fd8;color:#fff}
+.btn{background:#2563eb;border:none;color:#fff;border-radius:8px;padding:9px 18px;font-size:14px;cursor:pointer;font-weight:600}
+.btn:hover{background:#1d4fd8}
+.ghost{background:transparent;border:1px solid #33456b;color:#aebcd8}
+.mini{background:#1d3a75;border:none;color:#fff;border-radius:6px;padding:4px 10px;font-size:12px;cursor:pointer;white-space:nowrap}
+.row{display:flex;gap:8px;align-items:center;background:#0d1420;border:1px solid #22304a;border-radius:8px;padding:7px 9px;margin-bottom:7px}
+.row code{flex:1;font-size:11.5px;word-break:break-all;color:#9fe0b0}
+.grid{display:grid;grid-template-columns:1fr 1fr;gap:0 14px}
+@media(max-width:640px){.grid{grid-template-columns:1fr}}
+.foot{color:#66738f;font-size:12px;margin-top:14px;line-height:1.7}
+.ok{color:#34d399;font-weight:600}
+</style></head><body>
+<h1>CF VLESS 节点生成器</h1>
+<div class="tip">纯前端本地生成 · 数据不出浏览器 · 配合 Cloudflare Workers/Pages 的 VLESS-WS-TLS 服务使用</div>
+
+<div class="card"><h2>① 基础参数</h2>
+<label>地址列表（每行一个：你的CF域名 / workers.dev 域名 / 优选IP）</label>
+<textarea id="hosts" rows="4" placeholder="myproxy.example.workers.dev&#10;104.16.0.1&#10;172.67.1.2"></textarea>
+<div class="grid">
+<div><label>SNI / Host 域名（填优选IP时必填你的CF域名；留空=用地址本身）</label>
+<input type="text" id="sni" placeholder="myproxy.example.workers.dev"></div>
+<div><label>UUID <button class="mini" type="button" onclick="rnd()">随机生成</button></label>
+<input type="text" id="uuid" placeholder="点击随机生成，或粘贴固定UUID"></div>
+</div>
+<label>端口（Cloudflare TLS 端口）</label>
+<div class="chips" id="chips"></div>
+<label>WS 路径 &nbsp;|&nbsp; 节点名前缀</label>
+<div class="grid">
+<div><input type="text" id="path" value="/?ed=2048"></div>
+<div><input type="text" id="prefix" value="CF"></div>
+</div>
+<label><input type="checkbox" id="ai"> allowInsecure=1（仅在自签/异常证书时勾选）</label>
+<button class="btn" onclick="gen()">生成节点</button>
+</div>
+
+<div class="card"><h2>② 生成结果 <span id="cnt" class="ok"></span></h2>
+<div id="out"></div>
+<div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:6px">
+<button class="btn ghost" onclick="cpAll()">复制全部（明文，剪贴板导入用）</button>
+<button class="btn ghost" onclick="cpSub()">复制订阅（base64）</button>
+</div>
+<div id="subwrap" style="display:none;margin-top:10px">
+<label>订阅内容（base64，可存到任意托管生成订阅链接）</label>
+<textarea id="sub" rows="3" readonly></textarea>
+</div>
+</div>
+
+<div class="foot">用法：① CF 上部署 VLESS-WS-TLS 服务（如各类 Workers 代理脚本），记下你的域名和 UUID；② 本页填入地址与 UUID 生成链接；③ v2rayNG / NekoBox / Shadowrocket / Clash 等客户端「从剪贴板导入」即可。优选IP：地址列填 CF 任播 IP，SNI 填你的 CF 域名。</div>
+
+<script>
+var $=function(id){return document.getElementById(id)};
+function rnd(){$('uuid').value=(crypto.randomUUID?crypto.randomUUID():'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g,function(c){var r=Math.random()*16|0;return (c=='x'?r:(r&3|8)).toString(16)}))}
+(function(){var ps=['443','2053','2083','2087','2096','8443'];var box=$('chips');ps.forEach(function(p,i){var b=document.createElement('button');b.type='button';b.className='chip'+(i==0?' on':'');b.textContent=p;b.onclick=function(){document.querySelectorAll('.chip').forEach(function(x){x.classList.remove('on')});b.classList.add('on');$('port').value=p};box.append(b)});var inp=document.createElement('input');inp.type='text';inp.id='port';inp.value='443';inp.style.width='90px';inp.style.marginLeft='8px';box.append(inp)})();
+function gen(){
+ var hosts=$('hosts').value.split(/\s+/).map(function(s){return s.trim()}).filter(Boolean);
+ if(!hosts.length){alert('请先填写地址列表');return}
+ var uuid=$('uuid').value.trim();if(!uuid){rnd();uuid=$('uuid').value.trim()}
+ var port=$('port').value.trim()||'443',path=$('path').value.trim()||'/?ed=2048',pre=$('prefix').value.trim()||'CF',sni=$('sni').value.trim(),ai=$('ai').checked;
+ var out=[];var box=$('out');box.innerHTML='';
+ hosts.forEach(function(h,i){
+  var s=sni||h;
+  var q=new URLSearchParams({encryption:'none',security:'tls',sni:s,fp:'chrome',type:'ws',host:s,path:path});
+  if(ai)q.set('allowInsecure','1');
+  var link='vless://'+uuid+'@'+h+':'+port+'?'+q.toString()+'#'+encodeURIComponent(pre+'-'+(i+1));
+  out.push(link);
+  var row=document.createElement('div');row.className='row';
+  var code=document.createElement('code');code.textContent=link;
+  var b=document.createElement('button');b.type='button';b.className='mini';b.textContent='复制';
+  b.onclick=function(){cp(link,b)};row.append(code,b);box.append(row);
+ });
+ $('subwrap').style.display='';
+ _links=out;
+ $('sub').value=b64(out.join('\n'));
+ $('cnt').textContent='共 '+out.length+' 个';
+}
+function b64(s){return btoa(unescape(encodeURIComponent(s)))}
+var _links=[];
+function cpAll(){cp(_links.join('\n'))}
+function cpSub(){cp($('sub').value)}
+function cp(t,btn){
+ var ok=function(el){return function(){if(el){var o=el.textContent;el.textContent='已复制 ✓';setTimeout(function(){el.textContent=o},1200)}}}(btn);
+ if(navigator.clipboard&&navigator.clipboard.writeText){navigator.clipboard.writeText(t).then(ok,function(){fallback(t,ok)})}else{fallback(t,ok)}
+}
+function fallback(t,ok){var ta=document.createElement('textarea');ta.value=t;ta.style.position='fixed';ta.style.opacity='0';document.body.append(ta);ta.select();try{document.execCommand('copy')}catch(e){}ta.remove();ok()}
+</script>
+</body></html>
