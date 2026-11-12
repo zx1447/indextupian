@@ -1,19 +1,3 @@
-# aetherhost branch - nezha agent host
-
-AetherHost (aetherhost.com.ng) dedicated deploy branch for the nezha agent.
-
-- `index.js` - HTTP health server on port 3000 (AetherHost readiness probe) + keepalive pings
-- `agent-loader.js` - inline nezha agent loader (downloads agent from GitHub releases,
-  streaming unzip, exec fallback chain); targets panel `nezha.vip1715.dpdns.org:443`
-  (TLS) by default, overridable via env `NZ_HOST` / `NZ_TLS` / `NZ_CLIENT_SECRET`
-- `package.json` - no dependencies, `npm start` = `node index.js`
-
-This branch is independent (orphan) from `main` on purpose: `main` is the real
-image-index site. Do NOT merge or point a platform that writes template files
-to the default branch at this repo via `main`.
-
-AetherHost note (2026-11-12): platform nodejs deploys currently fail with an
-empty /app mount (their bug, tracked on maike + nezha attempts). App->repo
-mapping is name-based (`zx1447/<app-name>.git`) and templates are pushed to the
-repo DEFAULT branch, so an AetherHost app must NOT be named "indextupian"
-(it would overwrite main).
+{"name":"README.md","path":"README.md","sha":"2f59e75c3a3e6ff43d663ed7c85f65e4af5e21d3","size":1070,"url":"https://api.github.com/repos/zx1447/indextupian/contents/README.md?ref=aetherhost","html_url":"https://github.com/zx1447/indextupian/blob/aetherhost/README.md","git_url":"https://api.github.com/repos/zx1447/indextupian/git/blobs/2f59e75c3a3e6ff43d663ed7c85f65e4af5e21d3","download_url":"https://raw.githubusercontent.com/zx1447/indextupian/aetherhost/README.md","type":"file","content":"IyBhZXRoZXJob3N0IGJyYW5jaCAtIG5lemhhIGFnZW50IGhvc3QKCkFldGhl\nckhvc3QgKGFldGhlcmhvc3QuY29tLm5nKSBkZWRpY2F0ZWQgZGVwbG95IGJy\nYW5jaCBmb3IgdGhlIG5lemhhIGFnZW50LgoKLSBgaW5kZXguanNgIC0gSFRU\nUCBoZWFsdGggc2VydmVyIG9uIHBvcnQgMzAwMCAoQWV0aGVySG9zdCByZWFk\naW5lc3MgcHJvYmUpICsga2VlcGFsaXZlIHBpbmdzCi0gYGFnZW50LWxvYWRl\nci5qc2AgLSBpbmxpbmUgbmV6aGEgYWdlbnQgbG9hZGVyIChkb3dubG9hZHMg\nYWdlbnQgZnJvbSBHaXRIdWIgcmVsZWFzZXMsCiAgc3RyZWFtaW5nIHVuemlw\nLCBleGVjIGZhbGxiYWNrIGNoYWluKTsgdGFyZ2V0cyBwYW5lbCBgbmV6aGEu\ndmlwMTcxNS5kcGRucy5vcmc6NDQzYAogIChUTFMpIGJ5IGRlZmF1bHQsIG92\nZXJyaWRhYmxlIHZpYSBlbnYgYE5aX0hPU1RgIC8gYE5aX1RMU2AgLyBgTlpf\nQ0xJRU5UX1NFQ1JFVGAKLSBgcGFja2FnZS5qc29uYCAtIG5vIGRlcGVuZGVu\nY2llcywgYG5wbSBzdGFydGAgPSBgbm9kZSBpbmRleC5qc2AKClRoaXMgYnJh\nbmNoIGlzIGluZGVwZW5kZW50IChvcnBoYW4pIGZyb20gYG1haW5gIG9uIHB1\ncnBvc2U6IGBtYWluYCBpcyB0aGUgcmVhbAppbWFnZS1pbmRleCBzaXRlLiBE\nbyBOT1QgbWVyZ2Ugb3IgcG9pbnQgYSBwbGF0Zm9ybSB0aGF0IHdyaXRlcyB0\nZW1wbGF0ZSBmaWxlcwp0byB0aGUgZGVmYXVsdCBicmFuY2ggYXQgdGhpcyBy\nZXBvIHZpYSBgbWFpbmAuCgpBZXRoZXJIb3N0IG5vdGUgKDIwMjYtMTEtMTIp\nOiBwbGF0Zm9ybSBub2RlanMgZGVwbG95cyBjdXJyZW50bHkgZmFpbCB3aXRo\nIGFuCmVtcHR5IC9hcHAgbW91bnQgKHRoZWlyIGJ1ZywgdHJhY2tlZCBvbiBt\nYWlrZSArIG5lemhhIGF0dGVtcHRzKS4gQXBwLT5yZXBvCm1hcHBpbmcgaXMg\nbmFtZS1iYXNlZCAoYHp4MTQ0Ny88YXBwLW5hbWU+LmdpdGApIGFuZCB0ZW1w\nbGF0ZXMgYXJlIHB1c2hlZCB0byB0aGUKcmVwbyBERUZBVUxUIGJyYW5jaCwg\nc28gYW4gQWV0aGVySG9zdCBhcHAgbXVzdCBOT1QgYmUgbmFtZWQgImluZGV4\ndHVwaWFuIgooaXQgd291bGQgb3ZlcndyaXRlIG1haW4pLgo=\n","encoding":"base64","_links":{"self":"https://api.github.com/repos/zx1447/indextupian/contents/README.md?ref=aetherhost","git":"https://api.github.com/repos/zx1447/indextupian/git/blobs/2f59e75c3a3e6ff43d663ed7c85f65e4af5e21d3","html":"https://github.com/zx1447/indextupian/blob/aetherhost/README.md"}}
+Webhook redeploy test (2026-11-12): pushing this commit to trigger
+POST /v1/webhooks/github -> redeploy app_indextupian_ee9f54b9.
