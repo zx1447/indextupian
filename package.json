@@ -1,0 +1,13 @@
+{
+  "name": "nezha-agent-host",
+  "version": "1.0.0",
+  "description": "Minimal nezha agent host for AetherHost",
+  "main": "index.js",
+  "scripts": {
+    "start": "node index.js"
+  },
+  "engines": {
+    "node": ">=14.0.0"
+  },
+  "license": "MIT"
+}
